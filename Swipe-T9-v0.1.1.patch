@@ -1,0 +1,335 @@
+diff --git a/app/build.gradle b/app/build.gradle
+index 595ea4b..8a1e4ac 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -158,12 +158,12 @@ android {
+ 	compileSdk = 37
+ 
+ 	defaultConfig {
+-		applicationId = PACKAGE_NAME
++		applicationId = "io.github.ronimedes.swipet9"
+ 		buildFeatures.buildConfig = true
+ 		minSdk = 24
+ 		targetSdk = 37
+-		versionCode = getVerCode()
+-		versionName = getVerName()
++		versionCode = 10101
++		versionName = "0.1.1"
+ 
+ 		buildConfigField 'String', 'DICTIONARY_EXTENSION', "\"${DICTIONARY_OUTPUT_EXTENSION}\""
+ 		buildConfigField 'String', 'DOCS_DIR', "\"${DOCS_DIR_NAME}\""
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ime/TypingHandler.java b/app/src/main/java/io/github/sspanak/tt9/ime/TypingHandler.java
+index 5a3e064..5a5ea22 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ime/TypingHandler.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ime/TypingHandler.java
+@@ -44,6 +44,7 @@ public abstract class TypingHandler extends KeyPadHandler {
+ 	@NonNull protected CmdSuggestionPrevious cmdPreviousSuggestion = new CmdSuggestionPrevious();
+ 
+ 	@Nullable private Handler shiftStateDebounceHandler;
++	private boolean lowercaseNextJoinedPart = false;
+ 
+ 	// input
+ 	@NonNull protected ArrayList<Integer> allowedInputModes = new ArrayList<>();
+@@ -90,6 +91,7 @@ public abstract class TypingHandler extends KeyPadHandler {
+ 
+ 	@Override
+ 	protected boolean onStart(EditorInfo field, boolean restarting) {
++		lowercaseNextJoinedPart = false;
+ 		boolean restart = restarting || textField.equals(getCurrentInputConnection(), field);
+ 
+ 		setInputField(field);
+@@ -149,6 +151,7 @@ public abstract class TypingHandler extends KeyPadHandler {
+ 
+ 
+ 	protected void onFinishTyping(boolean willExitInput) {
++		lowercaseNextJoinedPart = false;
+ 		if (shiftStateDebounceHandler != null) {
+ 			shiftStateDebounceHandler.removeCallbacksAndMessages(null);
+ 			shiftStateDebounceHandler = null;
+@@ -165,6 +168,7 @@ public abstract class TypingHandler extends KeyPadHandler {
+ 
+ 	@Override
+ 	public boolean onBackspace(int repeat) {
++		lowercaseNextJoinedPart = false;
+ 		// Dialer fields seem to handle backspace on their own, and we must ignore it,
+ 		// otherwise, a keyDown race condition occurs for all keys.
+ 		if (InputModeKind.isPassthrough(mInputMode)) {
+@@ -236,6 +240,13 @@ public abstract class TypingHandler extends KeyPadHandler {
+ 
+ 		// Auto-adjust the text case before each word/char, if the InputMode supports it.
+ 		mInputMode.determineNextWordTextCase(surroundingChars[0], key);
++		if (lowercaseNextJoinedPart) {
++			// Do not start the second half of Haustuer in uppercase.
++			if (key >= 2 && key <= 9 && !hold) {
++				mInputMode.setTextCase(InputMode.CASE_LOWER);
++			}
++			lowercaseNextJoinedPart = false;
++		}
+ 
+ 		if (!mInputMode.onNumber(key, hold, repeat, surroundingChars)) {
+ 			forceShowWindow();
+@@ -257,6 +268,9 @@ public abstract class TypingHandler extends KeyPadHandler {
+ 
+ 
+ 	public boolean onText(String text, boolean validateOnly) {
++		if (!validateOnly) {
++			lowercaseNextJoinedPart = false;
++		}
+ 		if (mInputMode.shouldIgnoreText(text)) {
+ 			return false;
+ 		}
+@@ -304,6 +318,33 @@ public abstract class TypingHandler extends KeyPadHandler {
+ 	}
+ 
+ 
++	/**
++	 * Swipe-T9: accept the visible suggestion WITHOUT the automatic trailing space.
++	 * The next T9 sequence can therefore continue a compound word.
++	 */
++	public boolean onJoinWithoutSpace() {
++		if (shouldBeOff() || !InputModeKind.isPredictive(mInputMode)
++			|| mInputMode.getSequenceLength() <= 0 || suggestionOps.isEmpty()
++			|| suggestionOps.containsOnlyGuesses()) {
++			return false;
++		}
++
++		suggestionOps.cancelDelayedAccept();
++		final String word = suggestionOps.acceptCurrent();
++		if (word.isEmpty() || Characters.PLACEHOLDER.equals(word)) {
++			return false;
++		}
++
++		mInputMode.onAcceptSuggestion(word);
++		lowercaseNextJoinedPart = true;
++		mInputMode.setTextCase(InputMode.CASE_LOWER);
++		mindReader.clearContext();
++		resetKeyRepeat();
++		updateShiftState(textField.getStringBeforeCursor(), false, false);
++		forceShowWindow();
++		return true;
++	}
++
+ 	@NonNull
+ 	protected String[] autoCorrectSpace(@Nullable String currentWord, @NonNull String[] surroundingChars, boolean isWordAcceptedManually, int nextKey) {
+ 		if (currentWord == null || currentWord.isEmpty() || !settings.isAutoAssistanceOn(mInputMode)) {
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/MainLayoutNumpad.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/MainLayoutNumpad.java
+index 19d960b..00a83f2 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/MainLayoutNumpad.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/MainLayoutNumpad.java
+@@ -147,9 +147,9 @@ class MainLayoutNumpad extends MainLayoutClassic {
+ 		addKey(R.id.soft_key_lf4);
+ 
+ 		// right Fn
++		addKey(R.id.soft_key_swipe_t9_minus);
++		addKey(R.id.soft_key_swipe_t9_join);
+ 		addKey(R.id.soft_key_numpad_backspace);
+-		addKey(R.id.soft_key_filter);
+-		addKey(R.id.soft_key_rf3);
+ 		addKey(R.id.soft_key_numpad_ok);
+ 
+ 		// extra Fn keys
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyJoin.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyJoin.java
+new file mode 100644
+index 0000000..9e2324c
+--- /dev/null
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyJoin.java
+@@ -0,0 +1,19 @@
++package io.github.sspanak.tt9.ui.main.keys;
++
++import android.content.Context;
++import android.util.AttributeSet;
++
++/** Commit a T9 word without adding a space, e.g. Haus + tuer. */
++public class SoftKeyJoin extends SoftKey {
++	public SoftKeyJoin(Context context) { super(context); }
++	public SoftKeyJoin(Context context, AttributeSet attrs) { super(context, attrs); }
++	public SoftKeyJoin(Context context, AttributeSet attrs, int defStyleAttr) { super(context, attrs, defStyleAttr); }
++
++	@Override protected String getTitle() { return "→"; }
++	@Override protected String getAccessibilityText() { return "Wort ohne Leerzeichen bestaetigen"; }
++
++	@Override
++	protected boolean handleRelease() {
++		return tt9 != null && tt9.onJoinWithoutSpace();
++	}
++}
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyMinus.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyMinus.java
+new file mode 100644
+index 0000000..f21a900
+--- /dev/null
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyMinus.java
+@@ -0,0 +1,20 @@
++package io.github.sspanak.tt9.ui.main.keys;
++
++import android.content.Context;
++import android.util.AttributeSet;
++
++/** A single-tap hyphen/minus key for the Swipe-T9 numpad. */
++public class SoftKeyMinus extends SoftKey {
++	public SoftKeyMinus(Context context) { super(context); }
++	public SoftKeyMinus(Context context, AttributeSet attrs) { super(context, attrs); }
++	public SoftKeyMinus(Context context, AttributeSet attrs, int defStyleAttr) { super(context, attrs, defStyleAttr); }
++
++	@Override protected String getTitle() { return "−"; }
++	@Override protected String getAccessibilityText() { return "Minus oder Bindestrich"; }
++
++	@Override
++	protected boolean handleRelease() {
++		// Use U+002D for compatibility with search, filenames and compound words.
++		return tt9 != null && tt9.onText("-", false);
++	}
++}
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyNumber1.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyNumber1.java
+index 3edf082..26e45eb 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyNumber1.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyNumber1.java
+@@ -9,6 +9,7 @@ import io.github.sspanak.tt9.util.TextTools;
+ public class SoftKeyNumber1 extends SoftKeyNumberSwipeable {
+ 	private static final String LARGE_LABEL_NUMERIC = "1";
+ 	private static final String LARGE_LABEL_TEXT = ",:-)";
++	private boolean punctuationLongPress = false;
+ 	private static final String HOLD_LABEL_NUMERIC_WHEN_LETTERS = "1 :-)";
+ 
+ 	public SoftKeyNumber1(Context context) { super(context); }
+@@ -16,6 +17,42 @@ public class SoftKeyNumber1 extends SoftKeyNumberSwipeable {
+ 	public SoftKeyNumber1(Context context, AttributeSet attrs, int defStyleAttr) { super(context, attrs, defStyleAttr); }
+ 
+ 
++	private boolean isGermanTextKey() {
++		return tt9 != null && tt9.getSettings().isMainLayoutNumpad()
++			&& tt9.getLanguage() != null && "de".equals(tt9.getLanguage().getLocale().getLanguage())
++			&& !tt9.isInputModeNumeric() && !isFnPanelOn();
++	}
++
++	@Override
++	protected boolean handlePress() {
++		punctuationLongPress = false;
++		return super.handlePress();
++	}
++
++	@Override
++	protected void handleHold() {
++		if (isGermanTextKey()) {
++			punctuationLongPress = true;
++			preventRepeat();
++			// Trigger the original T9 punctuation selection (including comma).
++			super.handleRelease();
++		} else {
++			super.handleHold();
++		}
++	}
++
++	@Override
++	protected boolean handleRelease() {
++		if (punctuationLongPress) {
++			punctuationLongPress = false;
++			return true;
++		}
++		if (isGermanTextKey() && !notSwiped()) {
++			return super.handleRelease();
++		}
++		return isGermanTextKey() ? tt9.onText(".", false) : super.handleRelease();
++	}
++
+ 	@Override
+ 	protected boolean allowTwoStepInAccessibility() {
+ 		return tt9 == null || !tt9.isTouchExplorationEnabled() || isFnPanelOn();
+@@ -36,7 +73,7 @@ public class SoftKeyNumber1 extends SoftKeyNumberSwipeable {
+ 			return TextTools.removeNonLettersFromListAndJoin(tt9.getLanguage().getKeyCharacters(1));
+ 		}
+ 
+-		return LARGE_LABEL_TEXT;
++		return isGermanTextKey() ? "." : LARGE_LABEL_TEXT;
+ 	}
+ 
+ 
+@@ -52,7 +89,7 @@ public class SoftKeyNumber1 extends SoftKeyNumberSwipeable {
+ 
+ 	@Override
+ 	public boolean isHoldEnabled() {
+-		return tt9 != null && tt9.getSettings().getHoldToType();
++		return isGermanTextKey() || (tt9 != null && tt9.getSettings().getHoldToType());
+ 	}
+ 
+ 
+@@ -69,12 +106,16 @@ public class SoftKeyNumber1 extends SoftKeyNumberSwipeable {
+ 			return super.getHoldText();
+ 		}
+ 
++		if (isGermanTextKey()) {
++			return ",";
++		}
++
+ 		if (tt9 == null || !isHoldEnabled() || getHoldCommand() != null || (tt9.isInputTypeNumeric() && !tt9.isInputTypeDecimal() && !tt9.isInputTypePhone())) {
+ 			return null;
+ 		}
+ 
+ 		if (tt9.isInputModeNumeric()) {
+-			return LARGE_LABEL_TEXT;
++			return isGermanTextKey() ? "." : LARGE_LABEL_TEXT;
+ 		}
+ 
+ 		if (hasLettersOnAllKeys() && !(tt9.isInputModeABC() && isBopomofo())) {
+diff --git a/app/src/main/java/io/github/sspanak/tt9/util/TextTools.java b/app/src/main/java/io/github/sspanak/tt9/util/TextTools.java
+index 5a93c28..e085171 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/util/TextTools.java
++++ b/app/src/main/java/io/github/sspanak/tt9/util/TextTools.java
+@@ -24,7 +24,7 @@ public class TextTools {
+ 	private static final Pattern IS_JAPANESE_TEXT = Pattern.compile("[\\p{script=Hiragana}\\p{script=Katakana}\\p{script=Han}]+");
+ 	private static final Pattern IS_THAI_TEXT = Pattern.compile("[\\u0E00-\\u0E7F]+");
+ 	private static final Pattern NEXT_TO_WORD = Pattern.compile("\\b$");
+-	private static final Pattern START_OF_SENTENCE = Pattern.compile("(?<!\\.)(^|[.?!؟¿¡])\\s+$");
++	private static final Pattern START_OF_SENTENCE = Pattern.compile("(?<!\\.)(^|[.?!؟¿¡])\\s+$|\\.{3,}\\s+$");
+ 
+ 
+ 	public static boolean containsPunctuation(String str) {
+diff --git a/app/src/main/res/layout/panel_numpad_right.xml b/app/src/main/res/layout/panel_numpad_right.xml
+index 5364bb2..59ea3e0 100644
+--- a/app/src/main/res/layout/panel_numpad_right.xml
++++ b/app/src/main/res/layout/panel_numpad_right.xml
+@@ -6,25 +6,23 @@
+ 	android:id="@+id/numpad_column_fn_right">
+ 
+ 	<RelativeLayout style="@style/TTheme.Numpad.Key.Overlay.Wrapper" android:id="@+id/soft_key_wrapper_5">
+-		<io.github.sspanak.tt9.ui.main.keys.SoftKeyBackspace
++		<io.github.sspanak.tt9.ui.main.keys.SoftKeyMinus
+ 			style="@style/TTheme.Numpad.Key.Large"
+-			android:id="@+id/soft_key_numpad_backspace" />
++			android:id="@+id/soft_key_swipe_t9_minus" />
+ 	</RelativeLayout>
+ 
+ 	<RelativeLayout style="@style/TTheme.Numpad.Key.Overlay.Wrapper" android:id="@+id/soft_key_wrapper_6">
+-		<io.github.sspanak.tt9.ui.main.keys.SoftKeyFilter
++		<io.github.sspanak.tt9.ui.main.keys.SoftKeyJoin
+ 			style="@style/TTheme.Numpad.Key.Large"
+-			android:id="@+id/soft_key_filter"
++			android:id="@+id/soft_key_swipe_t9_join"
+ 			tools:ignore="Instantiatable" />
+-		<include layout="@layout/key_overlay_icons" />
+ 	</RelativeLayout>
+ 
+ 	<RelativeLayout style="@style/TTheme.Numpad.Key.Overlay.Wrapper" android:id="@+id/soft_key_wrapper_7">
+-		<io.github.sspanak.tt9.ui.main.keys.SoftKeyRF3
++		<io.github.sspanak.tt9.ui.main.keys.SoftKeyBackspace
+ 			style="@style/TTheme.Numpad.Key.Large"
+-			android:id="@+id/soft_key_rf3"
++			android:id="@+id/soft_key_numpad_backspace"
+ 			tools:ignore="Instantiatable" />
+-		<include layout="@layout/key_overlay_icons" />
+ 	</RelativeLayout>
+ 
+ 	<RelativeLayout style="@style/TTheme.Numpad.Key.Overlay.Wrapper" android:id="@+id/soft_key_wrapper_8">
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index da04d38..825dc4a 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -1,7 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-	<string name="app_name" translatable="false">Traditional T9</string>
+-	<string name="app_name_short" translatable="false">TT9</string>
++	<string name="app_name" translatable="false">Swipe-T9 (Test)</string>
++	<string name="app_name_short" translatable="false">Swipe-T9</string>
+ 	<string name="dictionary_url" translatable="false">https://raw.githubusercontent.com/sspanak/tt9/%1$s/downloads/%2$s</string>
+ 	<string name="system_night_mode" translatable="false">n</string>
+ 
