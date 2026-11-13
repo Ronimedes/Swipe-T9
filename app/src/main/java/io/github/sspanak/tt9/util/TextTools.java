@@ -24,7 +24,7 @@ public class TextTools {
 	private static final Pattern IS_JAPANESE_TEXT = Pattern.compile("[\\p{script=Hiragana}\\p{script=Katakana}\\p{script=Han}]+");
 	private static final Pattern IS_THAI_TEXT = Pattern.compile("[\\u0E00-\\u0E7F]+");
 	private static final Pattern NEXT_TO_WORD = Pattern.compile("\\b$");
-	private static final Pattern START_OF_SENTENCE = Pattern.compile("(?<!\\.)(^|[.?!؟¿¡])\\s+$");
+	private static final Pattern START_OF_SENTENCE = Pattern.compile("(?<!\\.)(^|[.?!؟¿¡])\\s+$|\\.{3,}\\s+$");
 
 
 	public static boolean containsPunctuation(String str) {

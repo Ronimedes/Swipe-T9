@@ -147,9 +147,9 @@ class MainLayoutNumpad extends MainLayoutClassic {
 		addKey(R.id.soft_key_lf4);
 
 		// right Fn
+		addKey(R.id.soft_key_swipe_t9_minus);
+		addKey(R.id.soft_key_swipe_t9_join);
 		addKey(R.id.soft_key_numpad_backspace);
-		addKey(R.id.soft_key_filter);
-		addKey(R.id.soft_key_rf3);
 		addKey(R.id.soft_key_numpad_ok);
 
 		// extra Fn keys

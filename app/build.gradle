@@ -158,12 +158,12 @@ android {
 	compileSdk = 37
 
 	defaultConfig {
-		applicationId = PACKAGE_NAME
+		applicationId = "io.github.ronimedes.swipet9"
 		buildFeatures.buildConfig = true
 		minSdk = 24
 		targetSdk = 37
-		versionCode = getVerCode()
-		versionName = getVerName()
+		versionCode = 10101
+		versionName = "0.1.1"
 
 		buildConfigField 'String', 'DICTIONARY_EXTENSION', "\"${DICTIONARY_OUTPUT_EXTENSION}\""
 		buildConfigField 'String', 'DOCS_DIR', "\"${DOCS_DIR_NAME}\""

@@ -9,12 +9,49 @@ import io.github.sspanak.tt9.util.TextTools;
 public class SoftKeyNumber1 extends SoftKeyNumberSwipeable {
 	private static final String LARGE_LABEL_NUMERIC = "1";
 	private static final String LARGE_LABEL_TEXT = ",:-)";
+	private boolean punctuationLongPress = false;
 	private static final String HOLD_LABEL_NUMERIC_WHEN_LETTERS = "1 :-)";
 
 	public SoftKeyNumber1(Context context) { super(context); }
 	public SoftKeyNumber1(Context context, AttributeSet attrs) { super(context, attrs); }
 	public SoftKeyNumber1(Context context, AttributeSet attrs, int defStyleAttr) { super(context, attrs, defStyleAttr); }
 
+
+	private boolean isGermanTextKey() {
+		return tt9 != null && tt9.getSettings().isMainLayoutNumpad()
+			&& tt9.getLanguage() != null && "de".equals(tt9.getLanguage().getLocale().getLanguage())
+			&& !tt9.isInputModeNumeric() && !isFnPanelOn();
+	}
+
+	@Override
+	protected boolean handlePress() {
+		punctuationLongPress = false;
+		return super.handlePress();
+	}
+
+	@Override
+	protected void handleHold() {
+		if (isGermanTextKey()) {
+			punctuationLongPress = true;
+			preventRepeat();
+			// Trigger the original T9 punctuation selection (including comma).
+			super.handleRelease();
+		} else {
+			super.handleHold();
+		}
+	}
+
+	@Override
+	protected boolean handleRelease() {
+		if (punctuationLongPress) {
+			punctuationLongPress = false;
+			return true;
+		}
+		if (isGermanTextKey() && !notSwiped()) {
+			return super.handleRelease();
+		}
+		return isGermanTextKey() ? tt9.onText(".", false) : super.handleRelease();
+	}
 
 	@Override
 	protected boolean allowTwoStepInAccessibility() {
@@ -36,7 +73,7 @@ public class SoftKeyNumber1 extends SoftKeyNumberSwipeable {
 			return TextTools.removeNonLettersFromListAndJoin(tt9.getLanguage().getKeyCharacters(1));
 		}
 
-		return LARGE_LABEL_TEXT;
+		return isGermanTextKey() ? "." : LARGE_LABEL_TEXT;
 	}
 
 
@@ -52,7 +89,7 @@ public class SoftKeyNumber1 extends SoftKeyNumberSwipeable {
 
 	@Override
 	public boolean isHoldEnabled() {
-		return tt9 != null && tt9.getSettings().getHoldToType();
+		return isGermanTextKey() || (tt9 != null && tt9.getSettings().getHoldToType());
 	}
 
 
@@ -69,12 +106,16 @@ public class SoftKeyNumber1 extends SoftKeyNumberSwipeable {
 			return super.getHoldText();
 		}
 
+		if (isGermanTextKey()) {
+			return ",";
+		}
+
 		if (tt9 == null || !isHoldEnabled() || getHoldCommand() != null || (tt9.isInputTypeNumeric() && !tt9.isInputTypeDecimal() && !tt9.isInputTypePhone())) {
 			return null;
 		}
 
 		if (tt9.isInputModeNumeric()) {
-			return LARGE_LABEL_TEXT;
+			return isGermanTextKey() ? "." : LARGE_LABEL_TEXT;
 		}
 
 		if (hasLettersOnAllKeys() && !(tt9.isInputModeABC() && isBopomofo())) {

@@ -44,6 +44,7 @@ public abstract class TypingHandler extends KeyPadHandler {
 	@NonNull protected CmdSuggestionPrevious cmdPreviousSuggestion = new CmdSuggestionPrevious();
 
 	@Nullable private Handler shiftStateDebounceHandler;
+	private boolean lowercaseNextJoinedPart = false;
 
 	// input
 	@NonNull protected ArrayList<Integer> allowedInputModes = new ArrayList<>();
@@ -90,6 +91,7 @@ public abstract class TypingHandler extends KeyPadHandler {
 
 	@Override
 	protected boolean onStart(EditorInfo field, boolean restarting) {
+		lowercaseNextJoinedPart = false;
 		boolean restart = restarting || textField.equals(getCurrentInputConnection(), field);
 
 		setInputField(field);
@@ -149,6 +151,7 @@ public abstract class TypingHandler extends KeyPadHandler {
 
 
 	protected void onFinishTyping(boolean willExitInput) {
+		lowercaseNextJoinedPart = false;
 		if (shiftStateDebounceHandler != null) {
 			shiftStateDebounceHandler.removeCallbacksAndMessages(null);
 			shiftStateDebounceHandler = null;
@@ -165,6 +168,7 @@ public abstract class TypingHandler extends KeyPadHandler {
 
 	@Override
 	public boolean onBackspace(int repeat) {
+		lowercaseNextJoinedPart = false;
 		// Dialer fields seem to handle backspace on their own, and we must ignore it,
 		// otherwise, a keyDown race condition occurs for all keys.
 		if (InputModeKind.isPassthrough(mInputMode)) {
@@ -236,6 +240,13 @@ public abstract class TypingHandler extends KeyPadHandler {
 
 		// Auto-adjust the text case before each word/char, if the InputMode supports it.
 		mInputMode.determineNextWordTextCase(surroundingChars[0], key);
+		if (lowercaseNextJoinedPart) {
+			// Do not start the second half of Haustuer in uppercase.
+			if (key >= 2 && key <= 9 && !hold) {
+				mInputMode.setTextCase(InputMode.CASE_LOWER);
+			}
+			lowercaseNextJoinedPart = false;
+		}
 
 		if (!mInputMode.onNumber(key, hold, repeat, surroundingChars)) {
 			forceShowWindow();
@@ -257,6 +268,9 @@ public abstract class TypingHandler extends KeyPadHandler {
 
 
 	public boolean onText(String text, boolean validateOnly) {
+		if (!validateOnly) {
+			lowercaseNextJoinedPart = false;
+		}
 		if (mInputMode.shouldIgnoreText(text)) {
 			return false;
 		}
@@ -303,6 +317,33 @@ public abstract class TypingHandler extends KeyPadHandler {
 		return true;
 	}
 
+
+	/**
+	 * Swipe-T9: accept the visible suggestion WITHOUT the automatic trailing space.
+	 * The next T9 sequence can therefore continue a compound word.
+	 */
+	public boolean onJoinWithoutSpace() {
+		if (shouldBeOff() || !InputModeKind.isPredictive(mInputMode)
+			|| mInputMode.getSequenceLength() <= 0 || suggestionOps.isEmpty()
+			|| suggestionOps.containsOnlyGuesses()) {
+			return false;
+		}
+
+		suggestionOps.cancelDelayedAccept();
+		final String word = suggestionOps.acceptCurrent();
+		if (word.isEmpty() || Characters.PLACEHOLDER.equals(word)) {
+			return false;
+		}
+
+		mInputMode.onAcceptSuggestion(word);
+		lowercaseNextJoinedPart = true;
+		mInputMode.setTextCase(InputMode.CASE_LOWER);
+		mindReader.clearContext();
+		resetKeyRepeat();
+		updateShiftState(textField.getStringBeforeCursor(), false, false);
+		forceShowWindow();
+		return true;
+	}
 
 	@NonNull
 	protected String[] autoCorrectSpace(@Nullable String currentWord, @NonNull String[] surroundingChars, boolean isWordAcceptedManually, int nextKey) {
