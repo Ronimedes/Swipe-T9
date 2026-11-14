@@ -151,7 +151,6 @@ class MainLayoutNumpad extends MainLayoutClassic {
 
 		// left Fn
 		addKey(R.id.soft_key_settings);
-		addKey(R.id.soft_key_add_word);
 		addKey(R.id.soft_key_shift);
 		addKey(R.id.soft_key_lf4);
 
