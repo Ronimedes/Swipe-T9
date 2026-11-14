@@ -1,0 +1,843 @@
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index df01849..74dbfa6 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -36,13 +36,25 @@ jobs:
+       - name: Sprachdateien kopieren
+         run: ./gradlew copyDownloadsToAssets
+ 
++      - name: Dauerhaften Test-Signaturschluessel laden
++        env:
++          KEYSTORE_B64: ${{ secrets.SWIPE_T9_DEBUG_KEYSTORE_B64 }}
++        run: |
++          if [ -z "$KEYSTORE_B64" ]; then
++            echo "ERROR: Repository secret SWIPE_T9_DEBUG_KEYSTORE_B64 fehlt."
++            exit 1
++          fi
++          mkdir -p "$HOME/.android"
++          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
++          chmod 600 "$HOME/.android/debug.keystore"
++
+       - name: Android Test APK bauen
+         run: ./gradlew assembleFullDebug
+ 
+       - name: APK bereitstellen
+         uses: actions/upload-artifact@v4
+         with:
+-          name: Swipe-T9-Test-APK
++          name: Swipe-T9-v0.2.0-APK
+           path: app/build/outputs/apk/full/debug/*.apk
+           if-no-files-found: error
+           retention-days: 14
+diff --git a/app/build.gradle b/app/build.gradle
+index 8a1e4ac..5f2362f 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -162,8 +162,8 @@ android {
+ 		buildFeatures.buildConfig = true
+ 		minSdk = 24
+ 		targetSdk = 37
+-		versionCode = 10101
+-		versionName = "0.1.1"
++		versionCode = 20000
++		versionName = "0.2.0"
+ 
+ 		buildConfigField 'String', 'DICTIONARY_EXTENSION', "\"${DICTIONARY_OUTPUT_EXTENSION}\""
+ 		buildConfigField 'String', 'DOCS_DIR', "\"${DOCS_DIR_NAME}\""
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ime/TraditionalT9.java b/app/src/main/java/io/github/sspanak/tt9/ime/TraditionalT9.java
+index ed30e48..3355f48 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ime/TraditionalT9.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ime/TraditionalT9.java
+@@ -317,6 +317,25 @@ public class TraditionalT9 extends PremiumHandler {
+ 	}
+ 
+ 
++	/** Swipe-T9 first test: apply a detected digit sequence via the existing T9 word engine. */
++	public boolean onSwipeT9Sequence(String digits) {
++		if (digits == null || digits.isEmpty() || digits.length() > 32 || shouldBeOff()
++			|| isFnPanelVisible() || !InputModeKind.isPredictive(mInputMode)) return false;
++		boolean result = false;
++		for (int i = 0; i < digits.length(); i++) {
++			int number = digits.charAt(i) - '0';
++			if (number < 2 || number > 9) return false;
++			result = onNumber(number, false, 0) || result;
++		}
++		return result;
++	}
++
++	/** Swipe is only active in normal predictive text fields, never in number/password modes. */
++	public boolean isSwipeT9Allowed() {
++		return !shouldBeOff() && !isFnPanelVisible() && InputModeKind.isPredictive(mInputMode)
++			&& settings.isMainLayoutNumpad() && !isTouchExplorationEnabled();
++	}
++
+ 	@Override
+ 	protected boolean onNumber(int key, boolean hold, int repeat) {
+ 		if (InputModeKind.isPredictive(mInputMode) && DictionaryLoader.autoLoad(this, settings, mLanguage)) {
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ime/TypingHandler.java b/app/src/main/java/io/github/sspanak/tt9/ime/TypingHandler.java
+index 5a5ea22..93c8531 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ime/TypingHandler.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ime/TypingHandler.java
+@@ -12,6 +12,7 @@ import androidx.annotation.Nullable;
+ import java.util.ArrayList;
+ 
+ import io.github.sspanak.tt9.commands.CmdSuggestionNext;
++import io.github.sspanak.tt9.commands.CmdAddWord;
+ import io.github.sspanak.tt9.commands.CmdSuggestionPrevious;
+ import io.github.sspanak.tt9.commands.Command;
+ import io.github.sspanak.tt9.db.words.DictionaryLoader;
+@@ -66,10 +67,20 @@ public abstract class TypingHandler extends KeyPadHandler {
+ 
+ 
+ 	protected void createSuggestionBar() {
+-		suggestionOps = new SuggestionOps(this, settings, mainView, appHacks, inputType, textField, statusBar, this::onAcceptSuggestionsDelayed, this::onOK, () -> onOK(KeyEvent.KEYCODE_UNKNOWN));
++		suggestionOps = new SuggestionOps(this, settings, mainView, appHacks, inputType, textField, statusBar, this::onAcceptSuggestionsDelayed, this::onOK, this::onSwipeT9SuggestionHold);
+ 	}
+ 
+ 
++	private void onSwipeT9SuggestionHold() {
++		CmdAddWord addWord = new CmdAddWord();
++		if (settings.isMainLayoutNumpad() && mLanguage != null
++			&& "de".equals(mLanguage.getLocale().getLanguage()) && addWord.isAvailable(getFinalContext())) {
++			addWord.run(getFinalContext());
++		} else {
++			onOK(KeyEvent.KEYCODE_UNKNOWN);
++		}
++	}
++
+ 	public boolean shouldBeOff() {
+ 		return getCurrentInputConnection() == null || InputModeKind.isPassthrough(mInputMode);
+ 	}
+@@ -166,6 +177,41 @@ public abstract class TypingHandler extends KeyPadHandler {
+ 	}
+ 
+ 
++	/**
++	 * Swipe-T9: remove the previous complete word on a single long press of Backspace.
++	 * Reuses the same text deletion helper as the existing Fast Delete implementation.
++	 */
++	public boolean onDeletePreviousWord() {
++		lowercaseNextJoinedPart = false;
++		if (InputModeKind.isPassthrough(mInputMode)) {
++			return false;
++		}
++		mindReader.clearContext();
++		suggestionOps.cancelDelayedAccept();
++		resetKeyRepeat();
++		final boolean hadSelection = !textSelection.isEmpty();
++		mInputMode.beforeDeleteText();
++		suggestionOps.commitCurrent(false, true);
++		if (hadSelection) {
++			deleteText(false);
++		} else {
++			String before = textField.getStringBeforeCursor(100);
++			int start = before.length();
++			while (start > 0) {
++				int ch = before.codePointBefore(start);
++				if (!Character.isLetterOrDigit(ch) && ch != '_') break;
++				start -= Character.charCount(ch);
++			}
++			// Keep preceding whitespace/punctuation intact. If no word, delete one character.
++			textField.deleteChars(mLanguage, Math.max(before.length() - start, 1));
++		}
++		mInputMode.reset();
++		updateShiftStateDebounced(null, mInputMode.noSuggestions(), false);
++		recompose(0, hadSelection);
++		forceShowWindow();
++		return true;
++	}
++
+ 	@Override
+ 	public boolean onBackspace(int repeat) {
+ 		lowercaseNextJoinedPart = false;
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ime/modes/helpers/AutoTextCase.java b/app/src/main/java/io/github/sspanak/tt9/ime/modes/helpers/AutoTextCase.java
+index 01fda4a..145fcd8 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ime/modes/helpers/AutoTextCase.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ime/modes/helpers/AutoTextCase.java
+@@ -157,7 +157,12 @@ public class AutoTextCase {
+ 			return InputMode.CASE_CAPITALIZE;
+ 		}
+ 
+-		// start of sentence, excluding after "..."
++		// Swipe-T9 German: three consecutive dots can end a sentence too.
++		// Keep the dictionary's native capitalization for nouns in ordinary sentences.
++		if ("de".equals(language.getLocale().getLanguage()) && before.trim().endsWith("...")) {
++			return InputMode.CASE_CAPITALIZE;
++		}
++
+ 		if (Text.isStartOfSentence(before)) {
+ 			return InputMode.CASE_CAPITALIZE;
+ 		}
+diff --git a/app/src/main/java/io/github/sspanak/tt9/preferences/settings/SettingsVirtualNumpad.java b/app/src/main/java/io/github/sspanak/tt9/preferences/settings/SettingsVirtualNumpad.java
+index c9f8b60..7393a49 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/preferences/settings/SettingsVirtualNumpad.java
++++ b/app/src/main/java/io/github/sspanak/tt9/preferences/settings/SettingsVirtualNumpad.java
+@@ -28,7 +28,7 @@ public class SettingsVirtualNumpad extends SettingsCustomKeyActions {
+ 	public final static int NUMPAD_SHAPE_LONG_SPACE = 2;
+ 
+ 	public static final String DEFAULT_LFN_KEY_ORDER = "1234";
+-	public static final String DEFAULT_RFN_KEY_ORDER = "5678";
++	public static final String DEFAULT_RFN_KEY_ORDER = "6758";
+ 
+ 	public static final HashMap<Character, Integer> KEY_ORDER_MAP = new HashMap<>() {{
+ 		put('1', R.id.soft_key_wrapper_1);
+@@ -77,7 +77,9 @@ public class SettingsVirtualNumpad extends SettingsCustomKeyActions {
+ 	}
+ 
+ 	@NonNull public String getRfnKeyOrder() {
+-		return prefs.getString("pref_rfn_key_order", DEFAULT_RFN_KEY_ORDER);
++		// Migrate old default order while retaining genuinely customized layouts.
++		String order = prefs.getString("pref_rfn_key_order", DEFAULT_RFN_KEY_ORDER);
++		return "5678".equals(order) ? DEFAULT_RFN_KEY_ORDER : order;
+ 	}
+ 
+ 	public FnKeyOrderValidator setFnKeyOrder(String left, String right) {
+@@ -127,7 +129,7 @@ public class SettingsVirtualNumpad extends SettingsCustomKeyActions {
+ 	}
+ 
+ 	public int getNumpadShape() {
+-		return getStringifiedInt(DropDownNumpadShape.NAME, NUMPAD_SHAPE_SQUARE);
++		return getStringifiedInt(DropDownNumpadShape.NAME, NUMPAD_SHAPE_LONG_SPACE);
+ 	}
+ 
+ 	public boolean isNumpadShapeLongSpace() { return getNumpadShape() == NUMPAD_SHAPE_LONG_SPACE; }
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/MainLayoutNumpad.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/MainLayoutNumpad.java
+index 00a83f2..1b607c7 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/MainLayoutNumpad.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/MainLayoutNumpad.java
+@@ -16,6 +16,7 @@ import io.github.sspanak.tt9.ime.TraditionalT9;
+ import io.github.sspanak.tt9.preferences.settings.SettingsStore;
+ import io.github.sspanak.tt9.preferences.settings.SettingsVirtualNumpad;
+ import io.github.sspanak.tt9.ui.main.keys.SoftKey;
++import io.github.sspanak.tt9.ui.main.swipe.SwipeT9TouchLayout;
+ import io.github.sspanak.tt9.ui.main.keys.SoftKeyArrow;
+ import io.github.sspanak.tt9.ui.main.keys.SoftKeyText;
+ import io.github.sspanak.tt9.util.Logger;
+@@ -76,6 +77,14 @@ class MainLayoutNumpad extends MainLayoutClassic {
+ 		final View leftColumn = view.findViewById(R.id.numpad_column_fn_left);
+ 		final View rightColumn = view.findViewById(R.id.numpad_column_fn_right);
+ 
++		// A real row, but with no button, separates the active keys from OK.
++		View spacer = view.findViewById(R.id.soft_key_wrapper_5);
++		if (spacer != null) {
++			ViewGroup.LayoutParams spacerParams = spacer.getLayoutParams();
++			spacerParams.height = rightHeight;
++			spacer.setLayoutParams(spacerParams);
++		}
++
+ 		for (SoftKey key : getKeys()) {
+ 			if (key instanceof SoftKeyArrow && ((SoftKeyArrow) key).isSmall()) {
+ 				continue;
+@@ -147,9 +156,8 @@ class MainLayoutNumpad extends MainLayoutClassic {
+ 		addKey(R.id.soft_key_lf4);
+ 
+ 		// right Fn
+-		addKey(R.id.soft_key_swipe_t9_minus);
+-		addKey(R.id.soft_key_swipe_t9_join);
+ 		addKey(R.id.soft_key_numpad_backspace);
++		addKey(R.id.soft_key_swipe_t9_join);
+ 		addKey(R.id.soft_key_numpad_ok);
+ 
+ 		// extra Fn keys
+@@ -253,6 +261,13 @@ class MainLayoutNumpad extends MainLayoutClassic {
+ 	}
+ 
+ 
++	@Override
++	protected void enableClickHandlers() {
++		super.enableClickHandlers();
++		SwipeT9TouchLayout touch = view != null ? view.findViewById(R.id.main_soft_keys) : null;
++		if (touch != null) touch.setTT9(tt9);
++	}
++
+ 	@Override
+ 	protected void afterRender() {}
+ }
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyBackspace.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyBackspace.java
+index 396563f..4bac7cc 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyBackspace.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyBackspace.java
+@@ -126,8 +126,10 @@ public class SoftKeyBackspace extends BaseSwipeableKey {
+ 	@Override
+ 	final protected void handleHold() {
+ 		isActionPerformed = true;
+-		repeat++;
+-		CmdBackspace.deleteText(tt9, repeat);
++		preventRepeat(); // Only one whole-word deletion per long press.
++		if (tt9 == null || !tt9.onDeletePreviousWord()) {
++			CmdBackspace.deleteText(tt9, 0);
++		}
+ 	}
+ 
+ 
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyCursorLeft.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyCursorLeft.java
+new file mode 100644
+index 0000000..4e316db
+--- /dev/null
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyCursorLeft.java
+@@ -0,0 +1,27 @@
++package io.github.sspanak.tt9.ui.main.keys;
++
++import android.content.Context;
++import android.util.AttributeSet;
++import io.github.sspanak.tt9.R;
++import io.github.sspanak.tt9.commands.CmdMoveCursor;
++
++/** One-tap cursor movement, repeatedly move left when held. */
++public final class SoftKeyCursorLeft extends SoftKey {
++    private boolean movedOnHold = false;
++    private final CmdMoveCursor cursor = new CmdMoveCursor();
++
++    public SoftKeyCursorLeft(Context c) { super(c); }
++    public SoftKeyCursorLeft(Context c, AttributeSet a) { super(c, a); }
++    public SoftKeyCursorLeft(Context c, AttributeSet a, int style) { super(c, a, style); }
++
++    @Override protected String getTitle() { return "←"; }
++    @Override protected String getAccessibilityText() { return "Cursor nach links"; }
++    @Override protected boolean handlePress() { movedOnHold = false; return super.handlePress(); }
++    @Override protected void handleHold() {
++        movedOnHold = true;
++        cursor.run(tt9, CmdMoveCursor.CURSOR_MOVE_LEFT);
++    }
++    @Override protected boolean handleRelease() {
++        return movedOnHold || cursor.run(tt9, CmdMoveCursor.CURSOR_MOVE_LEFT);
++    }
++}
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyJoin.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyJoin.java
+index 9e2324c..d79ee2a 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyJoin.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyJoin.java
+@@ -2,6 +2,8 @@ package io.github.sspanak.tt9.ui.main.keys;
+ 
+ import android.content.Context;
+ import android.util.AttributeSet;
++import android.widget.Toast;
++import io.github.sspanak.tt9.ui.main.swipe.SwipeT9TouchLayout;
+ 
+ /** Commit a T9 word without adding a space, e.g. Haus + tuer. */
+ public class SoftKeyJoin extends SoftKey {
+@@ -12,8 +14,23 @@ public class SoftKeyJoin extends SoftKey {
+ 	@Override protected String getTitle() { return "→"; }
+ 	@Override protected String getAccessibilityText() { return "Wort ohne Leerzeichen bestaetigen"; }
+ 
++	private boolean held = false;
++
++	@Override protected boolean handlePress() {
++		held = false;
++		return super.handlePress();
++	}
++
++	@Override protected void handleHold() {
++		preventRepeat();
++		held = true;
++		boolean enabled = SwipeT9TouchLayout.toggleEnabled(getContext());
++		Toast.makeText(getContext(), enabled ? "Swipe-T9: EIN" : "Swipe-T9: AUS", Toast.LENGTH_SHORT).show();
++	}
++
+ 	@Override
+ 	protected boolean handleRelease() {
++		if (held) { held = false; return true; }
+ 		return tt9 != null && tt9.onJoinWithoutSpace();
+ 	}
+ }
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyLF4.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyLF4.java
+index 8b9fc3a..c073a42 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyLF4.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyLF4.java
+@@ -11,6 +11,7 @@ import io.github.sspanak.tt9.commands.CmdNextInputMode;
+ import io.github.sspanak.tt9.commands.CmdNextKeyboard;
+ import io.github.sspanak.tt9.commands.CmdNextLanguage;
+ import io.github.sspanak.tt9.commands.CmdSelectKeyboard;
++import io.github.sspanak.tt9.ime.modes.InputModeKind;
+ import io.github.sspanak.tt9.preferences.settings.SettingsStore;
+ import io.github.sspanak.tt9.ui.Vibration;
+ 
+@@ -90,6 +91,11 @@ public class SoftKeyLF4 extends BaseSwipeableKey {
+ 
+ 	@Override
+ 	protected String getTitle() {
++		if (tt9 != null && tt9.getSettings().isMainLayoutNumpad()
++			&& tt9.getLanguage() != null && "de".equals(tt9.getLanguage().getLocale().getLanguage())) {
++			if (InputModeKind.isPredictive(tt9.getInputMode())) return "T9";
++			if (tt9.isInputModeABC()) return "ABC";
++		}
+ 		return tt9 != null ? tt9.getInputModeName() : getContext().getString(R.string.virtual_key_input_mode);
+ 	}
+ 
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyMinus.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyMinus.java
+deleted file mode 100644
+index f21a900..0000000
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyMinus.java
++++ /dev/null
+@@ -1,20 +0,0 @@
+-package io.github.sspanak.tt9.ui.main.keys;
+-
+-import android.content.Context;
+-import android.util.AttributeSet;
+-
+-/** A single-tap hyphen/minus key for the Swipe-T9 numpad. */
+-public class SoftKeyMinus extends SoftKey {
+-	public SoftKeyMinus(Context context) { super(context); }
+-	public SoftKeyMinus(Context context, AttributeSet attrs) { super(context, attrs); }
+-	public SoftKeyMinus(Context context, AttributeSet attrs, int defStyleAttr) { super(context, attrs, defStyleAttr); }
+-
+-	@Override protected String getTitle() { return "−"; }
+-	@Override protected String getAccessibilityText() { return "Minus oder Bindestrich"; }
+-
+-	@Override
+-	protected boolean handleRelease() {
+-		// Use U+002D for compatibility with search, filenames and compound words.
+-		return tt9 != null && tt9.onText("-", false);
+-	}
+-}
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyNumber1.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyNumber1.java
+index 26e45eb..b868890 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyNumber1.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyNumber1.java
+@@ -107,7 +107,7 @@ public class SoftKeyNumber1 extends SoftKeyNumberSwipeable {
+ 		}
+ 
+ 		if (isGermanTextKey()) {
+-			return ",";
++			return "1";
+ 		}
+ 
+ 		if (tt9 == null || !isHoldEnabled() || getHoldCommand() != null || (tt9.isInputTypeNumeric() && !tt9.isInputTypeDecimal() && !tt9.isInputTypePhone())) {
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyTextLeft.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyTextLeft.java
+index 3bd6a81..46555cb 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyTextLeft.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyTextLeft.java
+@@ -9,6 +9,36 @@ import io.github.sspanak.tt9.util.chars.Characters;
+ 
+ public class SoftKeyTextLeft extends SoftKeyText {
+ 	private final CmdUndo undo = new CmdUndo();
++	private boolean questionHold = false;
++
++	private boolean useQuestionHold() {
++		return tt9 != null && tt9.getSettings().isMainLayoutNumpad()
++			&& tt9.getLanguage() != null && "de".equals(tt9.getLanguage().getLocale().getLanguage())
++			&& !tt9.isInputModeNumeric() && !isTextEditingOn() && !tt9.isFnPanelVisible();
++	}
++
++	@Override
++	protected boolean handlePress() {
++		questionHold = false;
++		return super.handlePress();
++	}
++
++	@Override
++	protected void handleHold() {
++		if (useQuestionHold()) {
++			questionHold = true;
++			preventRepeat();
++			tt9.onText("?", false);
++		} else {
++			super.handleHold();
++		}
++	}
++
++	@Override
++	protected String getHoldText() {
++		return useQuestionHold() ? "?" : super.getHoldText();
++	}
++
+ 
+ 	public SoftKeyTextLeft(Context context) { super(context); }
+ 	public SoftKeyTextLeft(Context context, AttributeSet attrs) { super(context, attrs); }
+@@ -16,6 +46,10 @@ public class SoftKeyTextLeft extends SoftKeyText {
+ 
+ 	@Override
+ 	protected boolean handleRelease() {
++		if (questionHold) {
++			questionHold = false;
++			return true;
++		}
+ 		return isTextEditingOn() ? undo.run(tt9) : super.handleRelease();
+ 	}
+ 
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9Gesture.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9Gesture.java
+new file mode 100644
+index 0000000..cc556ee
+--- /dev/null
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9Gesture.java
+@@ -0,0 +1,99 @@
++package io.github.sspanak.tt9.ui.main.swipe;
++
++/**
++ * Small, allocation-light gesture decoder. Receives positions in screen pixels.
++ * A complete loop within one key counts as ONE deliberate repeated key.
++ * No dictionary logic lives here: the resulting digits use the normal T9 engine.
++ */
++public final class SwipeT9Gesture {
++    private final StringBuilder sequence = new StringBuilder();
++    private final float[] sampleX = new float[200];
++    private final float[] sampleY = new float[200];
++    private int sampleCount;
++    private int digit = -1;
++    private boolean loopRecognized;
++    private float traveled;
++    private float keySize;
++    private float lowX, highX, lowY, highY;
++    private int horizontalDirection, horizontalTurns;
++    private float horizontalLeg, zigzagTravel;
++
++    public void reset() {
++        sequence.setLength(0);
++        digit = -1;
++        sampleCount = 0;
++        loopRecognized = false;
++        traveled = 0;
++        horizontalDirection = horizontalTurns = 0;
++        horizontalLeg = zigzagTravel = 0;
++    }
++
++    public String getDigits() { return sequence.toString(); }
++
++    public void add(int nextDigit, float x, float y, float keyWidth, float keyHeight) {
++        if (nextDigit < 2 || nextDigit > 9 || sequence.length() >= 32) return;
++        if (digit != nextDigit) {
++            digit = nextDigit;
++            sequence.append((char) ('0' + digit));
++            sampleCount = 0;
++            traveled = 0;
++            loopRecognized = false;
++            horizontalDirection = horizontalTurns = 0;
++            horizontalLeg = zigzagTravel = 0;
++            keySize = Math.max(1f, Math.min(keyWidth, keyHeight));
++            lowX = highX = x;
++            lowY = highY = y;
++        }
++        if (sampleCount > 0) {
++            float dx = x - sampleX[sampleCount - 1];
++            float dy = y - sampleY[sampleCount - 1];
++            traveled += (float) Math.hypot(dx, dy);
++            if (!loopRecognized && Math.abs(dx) > .03f * keySize) {
++                int direction = dx > 0 ? 1 : -1;
++                if (horizontalDirection != 0 && direction != horizontalDirection) {
++                    if (horizontalLeg >= .25f * keySize) {
++                        horizontalTurns++;
++                        zigzagTravel += horizontalLeg;
++                        horizontalDirection = direction;
++                        horizontalLeg = Math.abs(dx);
++                    }
++                } else {
++                    horizontalDirection = direction;
++                    horizontalLeg += Math.abs(dx);
++                }
++            }
++        }
++        lowX = Math.min(lowX, x); highX = Math.max(highX, x);
++        lowY = Math.min(lowY, y); highY = Math.max(highY, y);
++        if (sampleCount < sampleX.length) {
++            sampleX[sampleCount] = x;
++            sampleY[sampleCount] = y;
++            sampleCount++;
++        }
++        // Deliberate left-right-left is a second way to repeat a key. Tiny finger jitter
++        // does not pass the minimum travel/turn thresholds.
++        if (!loopRecognized && horizontalTurns >= 2 && zigzagTravel + horizontalLeg >= 1.1f * keySize
++                && highY - lowY < .25f * keySize && highX - lowX >= .32f * keySize) {
++            sequence.append((char) ('0' + digit));
++            loopRecognized = true;
++        }
++        if (!loopRecognized && sampleCount >= 7 && traveled >= 1.10f * keySize
++            && highX - lowX >= .25f * keySize && highY - lowY >= .25f * keySize) {
++            // Look for a real return to an earlier point, with enough perimeter between them.
++            for (int i = 0; i < sampleCount - 5; i++) {
++                float dx = x - sampleX[i], dy = y - sampleY[i];
++                if (Math.hypot(dx, dy) <= .20f * keySize) {
++                    float path = 0;
++                    for (int j = i + 1; j < sampleCount; j++) {
++                        path += Math.hypot(sampleX[j] - sampleX[j-1], sampleY[j] - sampleY[j-1]);
++                    }
++                    if (path >= .85f * keySize) {
++                        sequence.append((char) ('0' + digit));
++                        loopRecognized = true;
++                        break;
++                    }
++                }
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9TouchLayout.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9TouchLayout.java
+new file mode 100644
+index 0000000..f0df4d9
+--- /dev/null
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9TouchLayout.java
+@@ -0,0 +1,129 @@
++package io.github.sspanak.tt9.ui.main.swipe;
++
++import android.content.Context;
++import android.graphics.Rect;
++import android.util.AttributeSet;
++import android.view.MotionEvent;
++import android.view.View;
++import android.view.ViewConfiguration;
++import android.widget.LinearLayout;
++
++import io.github.sspanak.tt9.R;
++import io.github.sspanak.tt9.ime.TraditionalT9;
++
++/**
++ * Experimental opt-in swipe mode for the large touchscreen numpad.
++ * Taps and ordinary long presses continue to go to the original soft keys.
++ * Only a deliberate drag takes over the touch stream, cancelling the original key.
++ */
++public final class SwipeT9TouchLayout extends LinearLayout {
++    private static final String PREFS = "swipe_t9_experiment";
++    private static final String ENABLED = "swipe_enabled";
++    private final int[] digitIds = {R.id.soft_key_2, R.id.soft_key_3, R.id.soft_key_4, R.id.soft_key_5,
++            R.id.soft_key_6, R.id.soft_key_7, R.id.soft_key_8, R.id.soft_key_9};
++    private final Rect hitRect = new Rect();
++    private final SwipeT9Gesture gesture = new SwipeT9Gesture();
++    private TraditionalT9 tt9;
++    private boolean tracking, captured;
++    private float startX, startY, lastX, lastY, pathLength, firstKeyWidth;
++    private int startDigit;
++
++    public SwipeT9TouchLayout(Context c) { super(c); }
++    public SwipeT9TouchLayout(Context c, AttributeSet a) { super(c, a); }
++    public SwipeT9TouchLayout(Context c, AttributeSet a, int s) { super(c, a, s); }
++
++    public void setTT9(TraditionalT9 handler) { this.tt9 = handler; }
++
++    public static boolean toggleEnabled(Context context) {
++        boolean enabled = !isEnabled(context);
++        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(ENABLED, enabled).apply();
++        return enabled;
++    }
++
++    private static boolean isEnabled(Context context) {
++        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(ENABLED, false);
++    }
++
++    private int digitAt(float x, float y) {
++        for (int i = 0; i < digitIds.length; i++) {
++            View key = findViewById(digitIds[i]);
++            if (key != null && key.isShown() && key.getGlobalVisibleRect(hitRect)
++                    && hitRect.contains((int) x, (int) y)) return digitIdsToNumber(i);
++        }
++        return -1;
++    }
++
++    private int digitIdsToNumber(int i) {
++        return new int[] {2,3,4,5,6,7,8,9}[i];
++    }
++
++    private void sample(float x, float y) {
++        int digit = digitAt(x,y);
++        if (digit < 2) return;
++        View key = findViewById(digitIds[digit - 2]);
++        if (key != null) gesture.add(digit, x, y, key.getWidth(), key.getHeight());
++    }
++
++    private void clear() {
++        tracking = captured = false;
++        pathLength = 0;
++        gesture.reset();
++    }
++
++    @Override
++    public boolean dispatchTouchEvent(MotionEvent ev) {
++        int action = ev.getActionMasked();
++        // One finger only. No interception with TalkBack, special input fields or ABC/numeric mode.
++        if (action == MotionEvent.ACTION_DOWN) {
++            clear();
++            if (tt9 == null || !isEnabled(getContext()) || !tt9.isSwipeT9Allowed()) {
++                return super.dispatchTouchEvent(ev);
++            }
++            startDigit = digitAt(ev.getRawX(), ev.getRawY());
++            if (startDigit < 2) return super.dispatchTouchEvent(ev);
++            tracking = true;
++            startX = lastX = ev.getRawX();
++            startY = lastY = ev.getRawY();
++            View first = findViewById(digitIds[startDigit - 2]);
++            firstKeyWidth = first == null ? 70 : Math.max(20, first.getWidth());
++            sample(startX, startY);
++            super.dispatchTouchEvent(ev);
++            return true;
++        }
++        if (!tracking) return super.dispatchTouchEvent(ev);
++        if (action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_CANCEL) {
++            if (!captured) super.dispatchTouchEvent(ev);
++            clear();
++            return true;
++        }
++        if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_UP) {
++            float x = ev.getRawX(), y = ev.getRawY();
++            pathLength += (float) Math.hypot(x - lastX, y - lastY);
++            lastX = x; lastY = y;
++            sample(x,y);
++            if (!captured && action == MotionEvent.ACTION_MOVE && pathLength >=
++                    Math.max(ViewConfiguration.get(getContext()).getScaledTouchSlop() * 2, firstKeyWidth * .35f)) {
++                // Cancel the key's normal tap/hold action, so one swipe is never typed twice.
++                MotionEvent cancel = MotionEvent.obtain(ev);
++                cancel.setAction(MotionEvent.ACTION_CANCEL);
++                super.dispatchTouchEvent(cancel);
++                cancel.recycle();
++                captured = true;
++            }
++            if (captured) {
++                if (action == MotionEvent.ACTION_UP) {
++                    String digits = gesture.getDigits();
++                    clear();
++                    if (digits.length() >= 2 && tt9 != null && tt9.isSwipeT9Allowed()) {
++                        tt9.onSwipeT9Sequence(digits);
++                    }
++                }
++                return true;
++            }
++            boolean result = super.dispatchTouchEvent(ev);
++            if (action == MotionEvent.ACTION_UP) clear();
++            return result;
++        }
++        return super.dispatchTouchEvent(ev);
++    }
++}
+diff --git a/app/src/main/res/layout/main_numpad.xml b/app/src/main/res/layout/main_numpad.xml
+index 1dd7d93..edab228 100644
+--- a/app/src/main/res/layout/main_numpad.xml
++++ b/app/src/main/res/layout/main_numpad.xml
+@@ -11,7 +11,7 @@
+ 		<View style="@style/TTheme.Keyboard.TopSeparator" />
+ 		<include layout="@layout/panel_numpad_status_bar" />
+ 
+-		<LinearLayout style="@style/TTheme.Numpad.Column.Container" android:id="@+id/main_soft_keys">
++		<io.github.sspanak.tt9.ui.main.swipe.SwipeT9TouchLayout style="@style/TTheme.Numpad.Column.Container" android:id="@+id/main_soft_keys">
+ 
+ 			<include layout="@layout/panel_numpad_left" />
+ 
+@@ -25,7 +25,7 @@
+ 
+ 			<include layout="@layout/panel_numpad_right" />
+ 
+-		</LinearLayout>
++		</io.github.sspanak.tt9.ui.main.swipe.SwipeT9TouchLayout>
+ 
+ 		<include
+ 			layout="@layout/panel_extra"
+diff --git a/app/src/main/res/layout/panel_numpad_left.xml b/app/src/main/res/layout/panel_numpad_left.xml
+index b60c9ac..cbd3ac3 100644
+--- a/app/src/main/res/layout/panel_numpad_left.xml
++++ b/app/src/main/res/layout/panel_numpad_left.xml
+@@ -13,10 +13,10 @@
+ 	</RelativeLayout>
+ 
+ 	<RelativeLayout style="@style/TTheme.Numpad.Key.Overlay.Wrapper" android:id="@+id/soft_key_wrapper_2">
+-		<io.github.sspanak.tt9.ui.main.keys.SoftKeyAddWord
++		<io.github.sspanak.tt9.ui.main.keys.SoftKeyCursorLeft
+ 			style="@style/TTheme.Numpad.Key.Large"
+-			android:id="@+id/soft_key_add_word"
+-			tools:ignore="Instantiatable" />
++			android:id="@+id/soft_key_extra_left_arrow"
++			android:text="@string/key_dpad_left" />
+ 		<include layout="@layout/key_overlay_icons" />
+ 	</RelativeLayout>
+ 
+@@ -34,13 +34,6 @@
+ 		<include layout="@layout/key_overlay_lf4" />
+ 	</RelativeLayout>
+ 
+-	<RelativeLayout style="@style/TTheme.Numpad.Key.Overlay.Wrapper" android:id="@+id/soft_key_wrapper_l">
+-		<io.github.sspanak.tt9.ui.main.keys.SoftKeyArrow
+-			style="@style/TTheme.Numpad.Key.Large"
+-			android:id="@+id/soft_key_extra_left_arrow"
+-			android:text="@string/key_dpad_left"/>
+-	</RelativeLayout>
+-
+ 	<RelativeLayout style="@style/TTheme.Numpad.Key.Overlay.Wrapper" android:id="@+id/soft_key_wrapper_r">
+ 		<io.github.sspanak.tt9.ui.main.keys.SoftKeyArrow
+ 			style="@style/TTheme.Numpad.Key.Large"
+diff --git a/app/src/main/res/layout/panel_numpad_long_spacebar.xml b/app/src/main/res/layout/panel_numpad_long_spacebar.xml
+index 2512e99..4f85cad 100644
+--- a/app/src/main/res/layout/panel_numpad_long_spacebar.xml
++++ b/app/src/main/res/layout/panel_numpad_long_spacebar.xml
+@@ -23,7 +23,9 @@
+ 		<include layout="@layout/key_overlay_side_chars" />
+ 	</RelativeLayout>
+ 
+-	<RelativeLayout style="@style/TTheme.Numpad.Key.ShortText.Overlay.Wrapper">
++	<RelativeLayout style="@style/TTheme.Numpad.Key.ShortText.Overlay.Wrapper"
++		android:layout_width="0dp"
++		android:layout_weight="0">
+ 		<io.github.sspanak.tt9.ui.main.keys.SoftKeyTextRightPremium
+ 			style="@style/TTheme.Numpad.Key.Number"
+ 			android:id="@+id/soft_key_text_202" />
+diff --git a/app/src/main/res/layout/panel_numpad_right.xml b/app/src/main/res/layout/panel_numpad_right.xml
+index 59ea3e0..9b03d92 100644
+--- a/app/src/main/res/layout/panel_numpad_right.xml
++++ b/app/src/main/res/layout/panel_numpad_right.xml
+@@ -5,23 +5,20 @@
+ 	style="@style/TTheme.Numpad.Column.Fn"
+ 	android:id="@+id/numpad_column_fn_right">
+ 
+-	<RelativeLayout style="@style/TTheme.Numpad.Key.Overlay.Wrapper" android:id="@+id/soft_key_wrapper_5">
+-		<io.github.sspanak.tt9.ui.main.keys.SoftKeyMinus
+-			style="@style/TTheme.Numpad.Key.Large"
+-			android:id="@+id/soft_key_swipe_t9_minus" />
+-	</RelativeLayout>
++	<!-- Intentionally empty spacer above the OK/send key to reduce accidental sends. -->
++	<RelativeLayout style="@style/TTheme.Numpad.Key.Overlay.Wrapper" android:id="@+id/soft_key_wrapper_5" />
+ 
+ 	<RelativeLayout style="@style/TTheme.Numpad.Key.Overlay.Wrapper" android:id="@+id/soft_key_wrapper_6">
+-		<io.github.sspanak.tt9.ui.main.keys.SoftKeyJoin
++		<io.github.sspanak.tt9.ui.main.keys.SoftKeyBackspace
+ 			style="@style/TTheme.Numpad.Key.Large"
+-			android:id="@+id/soft_key_swipe_t9_join"
++			android:id="@+id/soft_key_numpad_backspace"
+ 			tools:ignore="Instantiatable" />
+ 	</RelativeLayout>
+ 
+ 	<RelativeLayout style="@style/TTheme.Numpad.Key.Overlay.Wrapper" android:id="@+id/soft_key_wrapper_7">
+-		<io.github.sspanak.tt9.ui.main.keys.SoftKeyBackspace
++		<io.github.sspanak.tt9.ui.main.keys.SoftKeyJoin
+ 			style="@style/TTheme.Numpad.Key.Large"
+-			android:id="@+id/soft_key_numpad_backspace"
++			android:id="@+id/soft_key_swipe_t9_join"
+ 			tools:ignore="Instantiatable" />
+ 	</RelativeLayout>
+ 
+diff --git a/scripts/setup-swipe-t9-signing.sh b/scripts/setup-swipe-t9-signing.sh
+new file mode 100755
+index 0000000..76b2f6c
+--- /dev/null
++++ b/scripts/setup-swipe-t9-signing.sh
+@@ -0,0 +1,37 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++# Run in a GitHub Codespace while logged into Ronimedes/Swipe-T9.
++# Creates ONE permanent TEST key. Never commit it to Git!
++if ! command -v gh >/dev/null || ! command -v keytool >/dev/null; then
++  echo "FEHLER: GitHub CLI oder Java keytool fehlen im Codespace." >&2
++  exit 1
++fi
++
++REPO="Ronimedes/Swipe-T9"
++BACKUP="$PWD/.swipe-t9-private"
++KEYSTORE="$BACKUP/swipe-t9-debug.keystore"
++mkdir -p "$BACKUP"
++chmod 700 "$BACKUP"
++# Local exclude applies only to this Codespace; no keystore bytes go to Git.
++if ! grep -qxF '/.swipe-t9-private/' .git/info/exclude 2>/dev/null; then
++  printf '\n/.swipe-t9-private/\n' >> .git/info/exclude
++fi
++
++if [ ! -f "$KEYSTORE" ]; then
++  echo "Erzeuge neuen dauerhaften TEST-Signaturschluessel ..."
++  keytool -genkeypair -noprompt -keystore "$KEYSTORE" \
++    -storetype JKS -alias androiddebugkey -keyalg RSA -keysize 3072 -validity 10000 \
++    -storepass android -keypass android \
++    -dname 'CN=Swipe-T9 Test, OU=Development, O=Ronimedes, C=DE'
++  chmod 600 "$KEYSTORE"
++else
++  echo "Verwende bereits existierenden Signaturschluessel."
++fi
++
++echo "Uebertrage Testschluessel verschluesselt in GitHub Actions Secrets ..."
++base64 -w0 "$KEYSTORE" | gh secret set SWIPE_T9_DEBUG_KEYSTORE_B64 --repo "$REPO"
++echo
++printf 'ERFOLG. WICHTIG: SICHERE %s ausserhalb des Codespaces!\n' "$KEYSTORE"
++echo 'Niemals GitHub committen oder weitergeben. Ohne diese Datei sind zukuenftige Updates nicht mehr reproduzierbar.'
++echo 'Ein Wechsel vom bisherigen automatischen Debug-Schluessel kann EINMALIG eine Neuinstallation erfordern.'
