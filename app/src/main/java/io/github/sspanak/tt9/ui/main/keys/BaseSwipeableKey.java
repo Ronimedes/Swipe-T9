@@ -147,6 +147,15 @@ abstract public class BaseSwipeableKey extends BaseSoftKeyWithSideText {
 			case MotionEvent.ACTION_UP:
 				onRelease(event);
 				break;
+			case MotionEvent.ACTION_CANCEL:
+				// The parent swipe recognizer has taken ownership of this gesture.
+				// Without this, the pending long-press callback can still type a digit
+				// AFTER the child has received ACTION_CANCEL.
+				cancelLongClick();
+				Timer.stop(TIMER_ID);
+				isHolding = isSwipingX = isSwipingY = false;
+				notSwiped = true;
+				break;
 		}
 
 		return super.onTouch(v, event);

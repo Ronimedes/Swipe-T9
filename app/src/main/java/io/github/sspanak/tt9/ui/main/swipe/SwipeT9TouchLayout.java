@@ -1,6 +1,8 @@
 package io.github.sspanak.tt9.ui.main.swipe;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import androidx.preference.PreferenceManager;
 import android.graphics.Rect;
 import android.util.AttributeSet;
@@ -24,7 +26,12 @@ public final class SwipeT9TouchLayout extends LinearLayout {
     private final Rect hitRect = new Rect();
     private final SwipeT9Gesture gesture = new SwipeT9Gesture();
     private TraditionalT9 tt9;
-    private boolean tracking, captured;
+    private boolean tracking, captured, normalKeyStarted;
+    // Do not send DOWN to the original digit key until we know this is a tap/hold.
+    // Otherwise the original key can emit a long-press digit before the swipe wins.
+    private MotionEvent pendingDown;
+    private final Handler pendingKeyHandler = new Handler(Looper.getMainLooper());
+    private final Runnable startNormalHold = this::forwardPendingDown;
     private float startX, startY, lastX, lastY, pathLength, firstKeyWidth;
     private int startDigit;
 
@@ -85,10 +92,29 @@ public final class SwipeT9TouchLayout extends LinearLayout {
         lastY = y;
     }
 
+    private void forwardPendingDown() {
+        if (!tracking || captured || pendingDown == null) return;
+        normalKeyStarted = true;
+        super.dispatchTouchEvent(pendingDown);
+        pendingDown.recycle();
+        pendingDown = null;
+    }
+
     private void clear() {
-        tracking = captured = false;
+        pendingKeyHandler.removeCallbacks(startNormalHold);
+        if (pendingDown != null) {
+            pendingDown.recycle();
+            pendingDown = null;
+        }
+        tracking = captured = normalKeyStarted = false;
         pathLength = 0;
         gesture.reset();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        clear();
+        super.onDetachedFromWindow();
     }
 
     @Override
@@ -108,12 +134,22 @@ public final class SwipeT9TouchLayout extends LinearLayout {
             View first = findViewById(digitIds[startDigit - 2]);
             firstKeyWidth = first == null ? 70 : Math.max(20, first.getWidth());
             sample(startX, startY);
-            super.dispatchTouchEvent(ev);
+            // Wait for the gesture decision. Ordinary taps are replayed on UP;
+            // a stationary hold starts the original key after a short grace period.
+            // This preserves the long-press digit without inserting it into swipes.
+            pendingDown = MotionEvent.obtain(ev);
+            pendingKeyHandler.postDelayed(startNormalHold,
+                    Math.max(300, ViewConfiguration.getLongPressTimeout() - 150));
             return true;
         }
         if (!tracking) return super.dispatchTouchEvent(ev);
         if (action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_CANCEL) {
-            if (!captured) super.dispatchTouchEvent(ev);
+            if (normalKeyStarted) {
+                MotionEvent cancel = MotionEvent.obtain(ev);
+                cancel.setAction(MotionEvent.ACTION_CANCEL);
+                super.dispatchTouchEvent(cancel);
+                cancel.recycle();
+            }
             clear();
             return true;
         }
@@ -122,13 +158,17 @@ public final class SwipeT9TouchLayout extends LinearLayout {
                 traceTo(ev.getHistoricalX(i), ev.getHistoricalY(i));
             }
             traceTo(ev.getX(), ev.getY());
-            if (!captured && pathLength >=
+            if (!captured && gesture.getDigits().length() >= 2 && pathLength >=
                     Math.max(ViewConfiguration.get(getContext()).getScaledTouchSlop() * 2, firstKeyWidth * .35f)) {
-                // Cancel the key's normal tap/hold action, so one swipe is never typed twice.
-                MotionEvent cancel = MotionEvent.obtain(ev);
-                cancel.setAction(MotionEvent.ACTION_CANCEL);
-                super.dispatchTouchEvent(cancel);
-                cancel.recycle();
+                // Cancel ONLY if the normal key stream actually started. Until then,
+                // no digit has been dispatched, so there is nothing to undo.
+                pendingKeyHandler.removeCallbacks(startNormalHold);
+                if (normalKeyStarted) {
+                    MotionEvent cancel = MotionEvent.obtain(ev);
+                    cancel.setAction(MotionEvent.ACTION_CANCEL);
+                    super.dispatchTouchEvent(cancel);
+                    cancel.recycle();
+                }
                 captured = true;
             }
             if (captured) {
@@ -141,7 +181,11 @@ public final class SwipeT9TouchLayout extends LinearLayout {
                 }
                 return true;
             }
-            boolean result = super.dispatchTouchEvent(ev);
+            // A real tap must still reach the original T9 key. Replaying the
+            // stored DOWN now makes it impossible for an unfinished swipe to
+            // produce a leading number through a key long-press callback.
+            if (action == MotionEvent.ACTION_UP && !normalKeyStarted) forwardPendingDown();
+            boolean result = normalKeyStarted ? super.dispatchTouchEvent(ev) : true;
             if (action == MotionEvent.ACTION_UP) clear();
             return result;
         }

@@ -49,6 +49,13 @@ public abstract class TypingHandler extends KeyPadHandler {
 
 	@Nullable private Handler shiftStateDebounceHandler;
 	private boolean lowercaseNextJoinedPart = false;
+	// Backspace directly after a swipe should delete that swiped word, not
+	// shorten its digit sequence and unexpectedly show a longer candidate.
+	private boolean eraseSwipeWordOnBackspace = false;
+
+	protected void markSwipeT9Entered() {
+		eraseSwipeWordOnBackspace = true;
+	}
 
 	// input
 	@NonNull protected ArrayList<Integer> allowedInputModes = new ArrayList<>();
@@ -130,6 +137,7 @@ public abstract class TypingHandler extends KeyPadHandler {
 	@Override
 	protected boolean onStart(EditorInfo field, boolean restarting) {
 		lowercaseNextJoinedPart = false;
+		eraseSwipeWordOnBackspace = false;
 		boolean restart = restarting || textField.equals(getCurrentInputConnection(), field);
 
 		setInputField(field);
@@ -209,6 +217,7 @@ public abstract class TypingHandler extends KeyPadHandler {
 	 * Reuses the same text deletion helper as the existing Fast Delete implementation.
 	 */
 	public boolean onDeletePreviousWord() {
+		eraseSwipeWordOnBackspace = false;
 		lowercaseNextJoinedPart = false;
 		if (InputModeKind.isPassthrough(mInputMode)) {
 			return false;
@@ -242,6 +251,11 @@ public abstract class TypingHandler extends KeyPadHandler {
 	@Override
 	public boolean onBackspace(int repeat) {
 		lowercaseNextJoinedPart = false;
+		if (eraseSwipeWordOnBackspace && repeat == 0 && !shouldBeOff()) {
+			eraseSwipeWordOnBackspace = false;
+			return onDeletePreviousWord();
+		}
+		eraseSwipeWordOnBackspace = false;
 		// Dialer fields seem to handle backspace on their own, and we must ignore it,
 		// otherwise, a keyDown race condition occurs for all keys.
 		if (InputModeKind.isPassthrough(mInputMode)) {
@@ -290,6 +304,7 @@ public abstract class TypingHandler extends KeyPadHandler {
 	 * @return boolean
 	 */
 	protected boolean onNumber(int key, boolean hold, int repeat) {
+		eraseSwipeWordOnBackspace = false;
 		suggestionOps.cancelDelayedAccept();
 
 		hold = hold && settings.getHoldToType();
@@ -342,6 +357,7 @@ public abstract class TypingHandler extends KeyPadHandler {
 
 	public boolean onText(String text, boolean validateOnly) {
 		if (!validateOnly) {
+			eraseSwipeWordOnBackspace = false;
 			lowercaseNextJoinedPart = false;
 		}
 		if (mInputMode.shouldIgnoreText(text)) {

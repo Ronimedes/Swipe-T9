@@ -328,6 +328,7 @@ public class TraditionalT9 extends PremiumHandler {
 			if (number < 2 || number > 9) return false;
 			result = onNumber(number, false, 0) || result;
 		}
+		if (result) markSwipeT9Entered();
 		return result;
 	}
 

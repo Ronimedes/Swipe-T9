@@ -108,6 +108,13 @@ public class BaseClickableKey extends com.google.android.material.button.Materia
 				return release();
 			}
 			repeat = false;
+		} else if (action == MotionEvent.ACTION_CANCEL) {
+			// The parent recognized a swipe. A cancelled key must never keep
+			// repeating or send a delayed long-press digit.
+			hold = false;
+			repeat = false;
+			repeatHandler.removeCallbacksAndMessages(null);
+			return true;
 		}
 
 		return false;
