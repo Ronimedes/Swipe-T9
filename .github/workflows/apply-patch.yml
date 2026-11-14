@@ -1,0 +1,58 @@
+
+name: Swipe-T9 Patch uebernehmen
+
+on:
+  workflow_dispatch:
+    inputs:
+      patch:
+        description: "Name der Patchdatei"
+        required: true
+        default: "Swipe-T9-v0.2.3-Wischfix.patch"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: swipe-t9-patch-master
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Quellcode laden
+        uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Patch pruefen und anwenden
+        env:
+          PATCH: ${{ inputs.patch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$PATCH" =~ ^Swipe-T9-v[0-9][A-Za-z0-9._-]*\.patch$ ]]; then
+            echo "Ungueltiger Dateiname"
+            exit 1
+          fi
+
+          test -f "$PATCH"
+          git apply --check "$PATCH"
+          git apply "$PATCH"
+          git diff --check
+
+          git add -- app/
+          git diff --cached --check
+
+          if git diff --cached --quiet; then
+            echo "Keine App-Aenderungen vorhanden"
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git commit -m "Swipe-T9: apply $PATCH"
+          git push origin HEAD:master
