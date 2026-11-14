@@ -1,4 +1,5 @@
 package io.github.sspanak.tt9.ime;
+import io.github.sspanak.tt9.R;
 
 import android.inputmethodservice.InputMethodService;
 import android.os.Handler;
