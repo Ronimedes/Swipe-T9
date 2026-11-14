@@ -1,0 +1,335 @@
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index 74dbfa6..a9005b2 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -54,7 +54,7 @@ jobs:
+       - name: APK bereitstellen
+         uses: actions/upload-artifact@v4
+         with:
+-          name: Swipe-T9-v0.2.0-APK
++          name: Swipe-T9-v0.2.2-APK
+           path: app/build/outputs/apk/full/debug/*.apk
+           if-no-files-found: error
+           retention-days: 14
+diff --git a/app/build.gradle b/app/build.gradle
+index 5f2362f..e36dc04 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -162,8 +162,8 @@ android {
+ 		buildFeatures.buildConfig = true
+ 		minSdk = 24
+ 		targetSdk = 37
+-		versionCode = 20000
+-		versionName = "0.2.0"
++		versionCode = 20002
++		versionName = "0.2.2"
+ 
+ 		buildConfigField 'String', 'DICTIONARY_EXTENSION', "\"${DICTIONARY_OUTPUT_EXTENSION}\""
+ 		buildConfigField 'String', 'DOCS_DIR', "\"${DOCS_DIR_NAME}\""
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ime/SuggestionHandler.java b/app/src/main/java/io/github/sspanak/tt9/ime/SuggestionHandler.java
+index d35d76a..9d1a436 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ime/SuggestionHandler.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ime/SuggestionHandler.java
+@@ -81,6 +81,7 @@ abstract public class SuggestionHandler extends TypingHandler {
+ 	protected void onAcceptSuggestionsDelayed(String word) {
+ 		onAcceptSuggestionManually(word, -1);
+ 		forceShowWindow();
++		refreshSwipeT9AbcWord();
+ 	}
+ 
+ 
+@@ -206,6 +207,11 @@ abstract public class SuggestionHandler extends TypingHandler {
+ 		}
+ 
+ 		forceShowWindow();
++		if (InputModeKind.isABC(mInputMode) && mainView != null && mainView.getView() != null) {
++			mainView.getView().postDelayed(this::refreshSwipeT9AbcWord, 100);
++		} else {
++			refreshSwipeT9AbcWord();
++		}
+ 
+ 		if (callback != null) {
+ 			callback.run();
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ime/TraditionalT9.java b/app/src/main/java/io/github/sspanak/tt9/ime/TraditionalT9.java
+index 3355f48..b3971b9 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ime/TraditionalT9.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ime/TraditionalT9.java
+@@ -47,6 +47,7 @@ public class TraditionalT9 extends PremiumHandler {
+ 		statusBar.setText(mInputMode);
+ 		suggestionOps.set(mInputMode.getSuggestions(), mInputMode.containsGeneratedSuggestions());
+ 		mainView.render();
++		refreshSwipeT9AbcWord();
+ 
+ 		return mainView.getView();
+ 	}
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ime/TypingHandler.java b/app/src/main/java/io/github/sspanak/tt9/ime/TypingHandler.java
+index 93c8531..e9c2c5d 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ime/TypingHandler.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ime/TypingHandler.java
+@@ -4,6 +4,8 @@ import android.inputmethodservice.InputMethodService;
+ import android.os.Handler;
+ import android.os.Looper;
+ import android.view.KeyEvent;
++import android.view.View;
++import android.widget.TextView;
+ import android.view.inputmethod.EditorInfo;
+ 
+ import androidx.annotation.NonNull;
+@@ -71,6 +73,30 @@ public abstract class TypingHandler extends KeyPadHandler {
+ 	}
+ 
+ 
++	/** A tappable ABC-word chip, independent of the per-letter suggestion list. */
++	protected void refreshSwipeT9AbcWord() {
++		if (mainView == null || mainView.getView() == null) return;
++		TextView chip = mainView.getView().findViewById(R.id.swipe_t9_abc_word);
++		if (chip == null) return;
++		if (!settings.isMainLayoutNumpad() || !InputModeKind.isABC(mInputMode)
++			|| mLanguage == null || shouldBeOff() || !inputType.isText()) {
++			chip.setVisibility(View.GONE);
++			return;
++		}
++		String word = textField.getSurroundingWord(mLanguage).trim();
++		if (word.length() < 2 || word.length() > 40) {
++			chip.setVisibility(View.GONE);
++			return;
++		}
++		chip.setText("＋ " + word);
++		chip.setContentDescription(getString(R.string.swipe_t9_add_word_abc, word));
++		chip.setOnClickListener(v -> {
++			CmdAddWord command = new CmdAddWord();
++			if (command.isAvailable(getFinalContext())) command.run(getFinalContext());
++		});
++		chip.setVisibility(View.VISIBLE);
++	}
++
+ 	private void onSwipeT9SuggestionHold() {
+ 		CmdAddWord addWord = new CmdAddWord();
+ 		if (settings.isMainLayoutNumpad() && mLanguage != null
+diff --git a/app/src/main/java/io/github/sspanak/tt9/preferences/settings/SettingsKeyChars.java b/app/src/main/java/io/github/sspanak/tt9/preferences/settings/SettingsKeyChars.java
+index b1b684d..8ef21bc 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/preferences/settings/SettingsKeyChars.java
++++ b/app/src/main/java/io/github/sspanak/tt9/preferences/settings/SettingsKeyChars.java
+@@ -174,6 +174,11 @@ class SettingsKeyChars extends SettingsInput {
+ 			}
+ 			case 1 -> {
+ 				chars = getChars1AsList(language);
++				// The large Swipe-T9 layout uses key 1 for '.', but the user still needs
++				// to type a literal 1 from its punctuation selection.
++				if ("de".equals(language.getLocale().getLanguage()) && !chars.contains("1")) {
++					chars.add("1");
++				}
+ 				if (!getCharsExtra(language, CHARS_GROUP_1).isEmpty()) {
+ 					chars.add(SuggestionsBar.SHOW_GROUP_1_SUGGESTION);
+ 				}
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyEmojiText.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyEmojiText.java
+new file mode 100644
+index 0000000..29c2bd4
+--- /dev/null
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyEmojiText.java
+@@ -0,0 +1,14 @@
++package io.github.sspanak.tt9.ui.main.keys;
++
++import android.content.Context;
++import android.util.AttributeSet;
++
++/** Small emoji entry in the existing candidate bar, without adding a keypad row. */
++public class SoftKeyEmojiText extends SoftKeyShowEmojis {
++    public SoftKeyEmojiText(Context context) { super(context); }
++    public SoftKeyEmojiText(Context context, AttributeSet attrs) { super(context, attrs); }
++    public SoftKeyEmojiText(Context context, AttributeSet attrs, int defStyleAttr) { super(context, attrs, defStyleAttr); }
++
++    @Override protected String getTitle() { return "☺"; }
++    @Override protected int getCentralIcon() { return -1; }
++}
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyJoin.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyJoin.java
+index d79ee2a..59939b9 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyJoin.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyJoin.java
+@@ -2,8 +2,6 @@ package io.github.sspanak.tt9.ui.main.keys;
+ 
+ import android.content.Context;
+ import android.util.AttributeSet;
+-import android.widget.Toast;
+-import io.github.sspanak.tt9.ui.main.swipe.SwipeT9TouchLayout;
+ 
+ /** Commit a T9 word without adding a space, e.g. Haus + tuer. */
+ public class SoftKeyJoin extends SoftKey {
+@@ -14,23 +12,9 @@ public class SoftKeyJoin extends SoftKey {
+ 	@Override protected String getTitle() { return "→"; }
+ 	@Override protected String getAccessibilityText() { return "Wort ohne Leerzeichen bestaetigen"; }
+ 
+-	private boolean held = false;
+-
+-	@Override protected boolean handlePress() {
+-		held = false;
+-		return super.handlePress();
+-	}
+-
+-	@Override protected void handleHold() {
+-		preventRepeat();
+-		held = true;
+-		boolean enabled = SwipeT9TouchLayout.toggleEnabled(getContext());
+-		Toast.makeText(getContext(), enabled ? "Swipe-T9: EIN" : "Swipe-T9: AUS", Toast.LENGTH_SHORT).show();
+-	}
+-
+ 	@Override
+ 	protected boolean handleRelease() {
+-		if (held) { held = false; return true; }
+ 		return tt9 != null && tt9.onJoinWithoutSpace();
+ 	}
++
+ }
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeySettingsClean.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeySettingsClean.java
+new file mode 100644
+index 0000000..6cb6cbd
+--- /dev/null
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeySettingsClean.java
+@@ -0,0 +1,17 @@
++package io.github.sspanak.tt9.ui.main.keys;
++
++import android.content.Context;
++import android.util.AttributeSet;
++
++/** Settings shortcut without the four legacy keyboard-resize arrows. */
++public class SoftKeySettingsClean extends SoftKeySettings {
++    public SoftKeySettingsClean(Context context) { super(context); }
++    public SoftKeySettingsClean(Context context, AttributeSet attrs) { super(context, attrs); }
++    public SoftKeySettingsClean(Context context, AttributeSet attrs, int defStyleAttr) { super(context, attrs, defStyleAttr); }
++
++    @Override protected boolean isSwipeable() { return false; }
++    @Override protected String getTopText() { return ""; }
++    @Override protected String getRightText() { return ""; }
++    @Override protected String getBottomText() { return ""; }
++    @Override protected String getLeftText() { return ""; }
++}
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyTextLeft.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyTextLeft.java
+index 46555cb..581a4de 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyTextLeft.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyTextLeft.java
+@@ -11,6 +11,12 @@ public class SoftKeyTextLeft extends SoftKeyText {
+ 	private final CmdUndo undo = new CmdUndo();
+ 	private boolean questionHold = false;
+ 
++	@Override
++	protected String getTopText() {
++		return useQuestionHold() ? "?" : super.getTopText();
++	}
++
++
+ 	private boolean useQuestionHold() {
+ 		return tt9 != null && tt9.getSettings().isMainLayoutNumpad()
+ 			&& tt9.getLanguage() != null && "de".equals(tt9.getLanguage().getLocale().getLanguage())
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9TouchLayout.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9TouchLayout.java
+index f0df4d9..cae8579 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9TouchLayout.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9TouchLayout.java
+@@ -1,6 +1,7 @@
+ package io.github.sspanak.tt9.ui.main.swipe;
+ 
+ import android.content.Context;
++import androidx.preference.PreferenceManager;
+ import android.graphics.Rect;
+ import android.util.AttributeSet;
+ import android.view.MotionEvent;
+@@ -17,8 +18,7 @@ import io.github.sspanak.tt9.ime.TraditionalT9;
+  * Only a deliberate drag takes over the touch stream, cancelling the original key.
+  */
+ public final class SwipeT9TouchLayout extends LinearLayout {
+-    private static final String PREFS = "swipe_t9_experiment";
+-    private static final String ENABLED = "swipe_enabled";
++    public static final String ENABLED = "swipe_t9_enabled";
+     private final int[] digitIds = {R.id.soft_key_2, R.id.soft_key_3, R.id.soft_key_4, R.id.soft_key_5,
+             R.id.soft_key_6, R.id.soft_key_7, R.id.soft_key_8, R.id.soft_key_9};
+     private final Rect hitRect = new Rect();
+@@ -36,12 +36,12 @@ public final class SwipeT9TouchLayout extends LinearLayout {
+ 
+     public static boolean toggleEnabled(Context context) {
+         boolean enabled = !isEnabled(context);
+-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(ENABLED, enabled).apply();
++        PreferenceManager.getDefaultSharedPreferences(context).edit().putBoolean(ENABLED, enabled).apply();
+         return enabled;
+     }
+ 
+-    private static boolean isEnabled(Context context) {
+-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(ENABLED, false);
++    public static boolean isEnabled(Context context) {
++        return PreferenceManager.getDefaultSharedPreferences(context).getBoolean(ENABLED, false);
+     }
+ 
+     private int digitAt(float x, float y) {
+diff --git a/app/src/main/res/layout/panel_numpad_left.xml b/app/src/main/res/layout/panel_numpad_left.xml
+index cbd3ac3..857e975 100644
+--- a/app/src/main/res/layout/panel_numpad_left.xml
++++ b/app/src/main/res/layout/panel_numpad_left.xml
+@@ -6,7 +6,7 @@
+ 	android:id="@+id/numpad_column_fn_left">
+ 
+ 	<RelativeLayout style="@style/TTheme.Numpad.Key.Overlay.Wrapper" android:id="@+id/soft_key_wrapper_1">
+-		<io.github.sspanak.tt9.ui.main.keys.SoftKeySettings
++		<io.github.sspanak.tt9.ui.main.keys.SoftKeySettingsClean
+ 			style="@style/TTheme.Numpad.Key.Large"
+ 			android:id="@+id/soft_key_settings" />
+ 		<include layout="@layout/key_overlay_side_chars" />
+diff --git a/app/src/main/res/layout/panel_numpad_status_bar.xml b/app/src/main/res/layout/panel_numpad_status_bar.xml
+index ea430b7..6bcc213 100644
+--- a/app/src/main/res/layout/panel_numpad_status_bar.xml
++++ b/app/src/main/res/layout/panel_numpad_status_bar.xml
+@@ -12,6 +12,26 @@
+ 		<include layout="@layout/panel_status_bar" />
+ 	</FrameLayout>
+ 
++	<TextView
++		android:id="@+id/swipe_t9_abc_word"
++		android:layout_width="wrap_content"
++		android:layout_height="match_parent"
++		android:maxWidth="140dp"
++		android:minWidth="48dp"
++		android:gravity="center"
++		android:paddingLeft="6dp"
++		android:paddingRight="6dp"
++		android:singleLine="true"
++		android:ellipsize="end"
++		android:textSize="14sp"
++		android:contentDescription="@string/function_add_word"
++		android:visibility="gone" />
++
++	<io.github.sspanak.tt9.ui.main.keys.SoftKeyEmojiText
++		style="@style/TTheme.Numpad.Key.Arrow"
++		android:id="@+id/soft_key_swipe_emoji"
++		android:contentDescription="@string/function_show_emojis" />
++
+ 	<io.github.sspanak.tt9.ui.main.keys.SoftKeyArrow
+ 		style="@style/TTheme.Numpad.Key.Arrow"
+ 		android:id="@+id/soft_key_right_arrow"
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 825dc4a..67b2e02 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -1,5 +1,9 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
++	<string name="swipe_t9_enable">Wischfunktion aktivieren</string>
++	<string name="swipe_t9_enable_summary">Im T9-Modus über die Zifferntasten wischen. Zum Ausschalten Haken entfernen.</string>
++	<string name="swipe_t9_add_word_abc">Zum Wörterbuch hinzufügen: %1$s</string>
++
+ 	<string name="app_name" translatable="false">Swipe-T9 (Test)</string>
+ 	<string name="app_name_short" translatable="false">Swipe-T9</string>
+ 	<string name="dictionary_url" translatable="false">https://raw.githubusercontent.com/sspanak/tt9/%1$s/downloads/%2$s</string>
+diff --git a/app/src/main/res/xml/prefs_screen_keypad.xml b/app/src/main/res/xml/prefs_screen_keypad.xml
+index 76817aa..921d925 100644
+--- a/app/src/main/res/xml/prefs_screen_keypad.xml
++++ b/app/src/main/res/xml/prefs_screen_keypad.xml
+@@ -4,6 +4,12 @@
+ 	android:orderingFromXml="true">
+ 
+ 	<PreferenceCategory android:title="@string/pref_category_typing">
++		<SwitchPreferenceCompat
++			android:key="swipe_t9_enabled"
++			android:defaultValue="false"
++			android:title="@string/swipe_t9_enable"
++			android:summary="@string/swipe_t9_enable_summary" />
++
+ 		<Preference
+ 			android:fragment="io.github.sspanak.tt9.preferences.screens.modeAbc.ModeAbcScreen"
+ 			android:key="screen_abc_mode"
