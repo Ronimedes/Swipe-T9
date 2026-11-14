@@ -81,6 +81,7 @@ abstract public class SuggestionHandler extends TypingHandler {
 	protected void onAcceptSuggestionsDelayed(String word) {
 		onAcceptSuggestionManually(word, -1);
 		forceShowWindow();
+		refreshSwipeT9AbcWord();
 	}
 
 
@@ -206,6 +207,11 @@ abstract public class SuggestionHandler extends TypingHandler {
 		}
 
 		forceShowWindow();
+		if (InputModeKind.isABC(mInputMode) && mainView != null && mainView.getView() != null) {
+			mainView.getView().postDelayed(this::refreshSwipeT9AbcWord, 100);
+		} else {
+			refreshSwipeT9AbcWord();
+		}
 
 		if (callback != null) {
 			callback.run();

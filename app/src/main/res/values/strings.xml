@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+	<string name="swipe_t9_enable">Wischfunktion aktivieren</string>
+	<string name="swipe_t9_enable_summary">Im T9-Modus über die Zifferntasten wischen. Zum Ausschalten Haken entfernen.</string>
+	<string name="swipe_t9_add_word_abc">Zum Wörterbuch hinzufügen: %1$s</string>
+
 	<string name="app_name" translatable="false">Swipe-T9 (Test)</string>
 	<string name="app_name_short" translatable="false">Swipe-T9</string>
 	<string name="dictionary_url" translatable="false">https://raw.githubusercontent.com/sspanak/tt9/%1$s/downloads/%2$s</string>

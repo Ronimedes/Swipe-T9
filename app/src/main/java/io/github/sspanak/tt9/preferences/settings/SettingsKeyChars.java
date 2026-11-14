@@ -174,6 +174,11 @@ class SettingsKeyChars extends SettingsInput {
 			}
 			case 1 -> {
 				chars = getChars1AsList(language);
+				// The large Swipe-T9 layout uses key 1 for '.', but the user still needs
+				// to type a literal 1 from its punctuation selection.
+				if ("de".equals(language.getLocale().getLanguage()) && !chars.contains("1")) {
+					chars.add("1");
+				}
 				if (!getCharsExtra(language, CHARS_GROUP_1).isEmpty()) {
 					chars.add(SuggestionsBar.SHOW_GROUP_1_SUGGESTION);
 				}

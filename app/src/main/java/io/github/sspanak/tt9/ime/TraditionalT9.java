@@ -47,6 +47,7 @@ public class TraditionalT9 extends PremiumHandler {
 		statusBar.setText(mInputMode);
 		suggestionOps.set(mInputMode.getSuggestions(), mInputMode.containsGeneratedSuggestions());
 		mainView.render();
+		refreshSwipeT9AbcWord();
 
 		return mainView.getView();
 	}

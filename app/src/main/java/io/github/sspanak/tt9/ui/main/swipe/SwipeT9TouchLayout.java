@@ -1,6 +1,7 @@
 package io.github.sspanak.tt9.ui.main.swipe;
 
 import android.content.Context;
+import androidx.preference.PreferenceManager;
 import android.graphics.Rect;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
@@ -17,8 +18,7 @@ import io.github.sspanak.tt9.ime.TraditionalT9;
  * Only a deliberate drag takes over the touch stream, cancelling the original key.
  */
 public final class SwipeT9TouchLayout extends LinearLayout {
-    private static final String PREFS = "swipe_t9_experiment";
-    private static final String ENABLED = "swipe_enabled";
+    public static final String ENABLED = "swipe_t9_enabled";
     private final int[] digitIds = {R.id.soft_key_2, R.id.soft_key_3, R.id.soft_key_4, R.id.soft_key_5,
             R.id.soft_key_6, R.id.soft_key_7, R.id.soft_key_8, R.id.soft_key_9};
     private final Rect hitRect = new Rect();
@@ -36,12 +36,12 @@ public final class SwipeT9TouchLayout extends LinearLayout {
 
     public static boolean toggleEnabled(Context context) {
         boolean enabled = !isEnabled(context);
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(ENABLED, enabled).apply();
+        PreferenceManager.getDefaultSharedPreferences(context).edit().putBoolean(ENABLED, enabled).apply();
         return enabled;
     }
 
-    private static boolean isEnabled(Context context) {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(ENABLED, false);
+    public static boolean isEnabled(Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context).getBoolean(ENABLED, false);
     }
 
     private int digitAt(float x, float y) {

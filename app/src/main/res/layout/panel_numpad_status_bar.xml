@@ -12,6 +12,26 @@
 		<include layout="@layout/panel_status_bar" />
 	</FrameLayout>
 
+	<TextView
+		android:id="@+id/swipe_t9_abc_word"
+		android:layout_width="wrap_content"
+		android:layout_height="match_parent"
+		android:maxWidth="140dp"
+		android:minWidth="48dp"
+		android:gravity="center"
+		android:paddingLeft="6dp"
+		android:paddingRight="6dp"
+		android:singleLine="true"
+		android:ellipsize="end"
+		android:textSize="14sp"
+		android:contentDescription="@string/function_add_word"
+		android:visibility="gone" />
+
+	<io.github.sspanak.tt9.ui.main.keys.SoftKeyEmojiText
+		style="@style/TTheme.Numpad.Key.Arrow"
+		android:id="@+id/soft_key_swipe_emoji"
+		android:contentDescription="@string/function_show_emojis" />
+
 	<io.github.sspanak.tt9.ui.main.keys.SoftKeyArrow
 		style="@style/TTheme.Numpad.Key.Arrow"
 		android:id="@+id/soft_key_right_arrow"

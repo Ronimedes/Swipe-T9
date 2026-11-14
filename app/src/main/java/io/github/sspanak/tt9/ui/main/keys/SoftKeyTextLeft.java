@@ -11,6 +11,12 @@ public class SoftKeyTextLeft extends SoftKeyText {
 	private final CmdUndo undo = new CmdUndo();
 	private boolean questionHold = false;
 
+	@Override
+	protected String getTopText() {
+		return useQuestionHold() ? "?" : super.getTopText();
+	}
+
+
 	private boolean useQuestionHold() {
 		return tt9 != null && tt9.getSettings().isMainLayoutNumpad()
 			&& tt9.getLanguage() != null && "de".equals(tt9.getLanguage().getLocale().getLanguage())

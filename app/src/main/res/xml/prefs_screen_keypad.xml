@@ -4,6 +4,12 @@
 	android:orderingFromXml="true">
 
 	<PreferenceCategory android:title="@string/pref_category_typing">
+		<SwitchPreferenceCompat
+			android:key="swipe_t9_enabled"
+			android:defaultValue="false"
+			android:title="@string/swipe_t9_enable"
+			android:summary="@string/swipe_t9_enable_summary" />
+
 		<Preference
 			android:fragment="io.github.sspanak.tt9.preferences.screens.modeAbc.ModeAbcScreen"
 			android:key="screen_abc_mode"

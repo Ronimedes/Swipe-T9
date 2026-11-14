@@ -4,6 +4,8 @@ import android.inputmethodservice.InputMethodService;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.KeyEvent;
+import android.view.View;
+import android.widget.TextView;
 import android.view.inputmethod.EditorInfo;
 
 import androidx.annotation.NonNull;
@@ -70,6 +72,30 @@ public abstract class TypingHandler extends KeyPadHandler {
 		suggestionOps = new SuggestionOps(this, settings, mainView, appHacks, inputType, textField, statusBar, this::onAcceptSuggestionsDelayed, this::onOK, this::onSwipeT9SuggestionHold);
 	}
 
+
+	/** A tappable ABC-word chip, independent of the per-letter suggestion list. */
+	protected void refreshSwipeT9AbcWord() {
+		if (mainView == null || mainView.getView() == null) return;
+		TextView chip = mainView.getView().findViewById(R.id.swipe_t9_abc_word);
+		if (chip == null) return;
+		if (!settings.isMainLayoutNumpad() || !InputModeKind.isABC(mInputMode)
+			|| mLanguage == null || shouldBeOff() || !inputType.isText()) {
+			chip.setVisibility(View.GONE);
+			return;
+		}
+		String word = textField.getSurroundingWord(mLanguage).trim();
+		if (word.length() < 2 || word.length() > 40) {
+			chip.setVisibility(View.GONE);
+			return;
+		}
+		chip.setText("＋ " + word);
+		chip.setContentDescription(getString(R.string.swipe_t9_add_word_abc, word));
+		chip.setOnClickListener(v -> {
+			CmdAddWord command = new CmdAddWord();
+			if (command.isAvailable(getFinalContext())) command.run(getFinalContext());
+		});
+		chip.setVisibility(View.VISIBLE);
+	}
 
 	private void onSwipeT9SuggestionHold() {
 		CmdAddWord addWord = new CmdAddWord();
