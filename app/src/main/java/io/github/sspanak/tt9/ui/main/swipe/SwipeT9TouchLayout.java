@@ -45,10 +45,15 @@ public final class SwipeT9TouchLayout extends LinearLayout {
     }
 
     private int digitAt(float x, float y) {
+        // MotionEvent.getX/Y() and this rectangle are BOTH local to the numpad.
+        // getGlobalVisibleRect() + getRawX/Y() mixes coordinate spaces on IME windows,
+        // so real swipes can be misidentified as an ordinary tap on the first key.
         for (int i = 0; i < digitIds.length; i++) {
             View key = findViewById(digitIds[i]);
-            if (key != null && key.isShown() && key.getGlobalVisibleRect(hitRect)
-                    && hitRect.contains((int) x, (int) y)) return digitIdsToNumber(i);
+            if (key == null || !key.isShown() || key.getWidth() <= 0 || key.getHeight() <= 0) continue;
+            key.getDrawingRect(hitRect);
+            offsetDescendantRectToMyCoords(key, hitRect);
+            if (hitRect.contains((int) x, (int) y)) return digitIdsToNumber(i);
         }
         return -1;
     }
@@ -62,6 +67,22 @@ public final class SwipeT9TouchLayout extends LinearLayout {
         if (digit < 2) return;
         View key = findViewById(digitIds[digit - 2]);
         if (key != null) gesture.add(digit, x, y, key.getWidth(), key.getHeight());
+    }
+
+    private void traceTo(float x, float y) {
+        float dx = x - lastX, dy = y - lastY;
+        float distance = (float) Math.hypot(dx, dy);
+        pathLength += distance;
+        // Fast swipes may skip MOVE events for intermediate keys. Sample the
+        // connecting line so 4 -> 2 -> 5 -> 6 is not reduced to just 4 and 6.
+        int steps = Math.min(96, Math.max(1,
+                (int) Math.ceil(distance / Math.max(8f, firstKeyWidth * .18f))));
+        for (int i = 1; i <= steps; i++) {
+            float fraction = (float) i / steps;
+            sample(lastX + dx * fraction, lastY + dy * fraction);
+        }
+        lastX = x;
+        lastY = y;
     }
 
     private void clear() {
@@ -79,11 +100,11 @@ public final class SwipeT9TouchLayout extends LinearLayout {
             if (tt9 == null || !isEnabled(getContext()) || !tt9.isSwipeT9Allowed()) {
                 return super.dispatchTouchEvent(ev);
             }
-            startDigit = digitAt(ev.getRawX(), ev.getRawY());
+            startDigit = digitAt(ev.getX(), ev.getY());
             if (startDigit < 2) return super.dispatchTouchEvent(ev);
             tracking = true;
-            startX = lastX = ev.getRawX();
-            startY = lastY = ev.getRawY();
+            startX = lastX = ev.getX();
+            startY = lastY = ev.getY();
             View first = findViewById(digitIds[startDigit - 2]);
             firstKeyWidth = first == null ? 70 : Math.max(20, first.getWidth());
             sample(startX, startY);
@@ -97,11 +118,11 @@ public final class SwipeT9TouchLayout extends LinearLayout {
             return true;
         }
         if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_UP) {
-            float x = ev.getRawX(), y = ev.getRawY();
-            pathLength += (float) Math.hypot(x - lastX, y - lastY);
-            lastX = x; lastY = y;
-            sample(x,y);
-            if (!captured && action == MotionEvent.ACTION_MOVE && pathLength >=
+            for (int i = 0; i < ev.getHistorySize(); i++) {
+                traceTo(ev.getHistoricalX(i), ev.getHistoricalY(i));
+            }
+            traceTo(ev.getX(), ev.getY());
+            if (!captured && pathLength >=
                     Math.max(ViewConfiguration.get(getContext()).getScaledTouchSlop() * 2, firstKeyWidth * .35f)) {
                 // Cancel the key's normal tap/hold action, so one swipe is never typed twice.
                 MotionEvent cancel = MotionEvent.obtain(ev);
