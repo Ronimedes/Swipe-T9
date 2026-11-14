@@ -36,13 +36,25 @@ jobs:
       - name: Sprachdateien kopieren
         run: ./gradlew copyDownloadsToAssets
 
+      - name: Dauerhaften Test-Signaturschluessel laden
+        env:
+          KEYSTORE_B64: ${{ secrets.SWIPE_T9_DEBUG_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "ERROR: Repository secret SWIPE_T9_DEBUG_KEYSTORE_B64 fehlt."
+            exit 1
+          fi
+          mkdir -p "$HOME/.android"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+
       - name: Android Test APK bauen
         run: ./gradlew assembleFullDebug
 
       - name: APK bereitstellen
         uses: actions/upload-artifact@v4
         with:
-          name: Swipe-T9-Test-APK
+          name: Swipe-T9-v0.2.0-APK
           path: app/build/outputs/apk/full/debug/*.apk
           if-no-files-found: error
           retention-days: 14
