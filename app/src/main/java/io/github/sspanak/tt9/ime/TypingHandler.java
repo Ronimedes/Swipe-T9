@@ -12,6 +12,7 @@ import androidx.annotation.Nullable;
 import java.util.ArrayList;
 
 import io.github.sspanak.tt9.commands.CmdSuggestionNext;
+import io.github.sspanak.tt9.commands.CmdAddWord;
 import io.github.sspanak.tt9.commands.CmdSuggestionPrevious;
 import io.github.sspanak.tt9.commands.Command;
 import io.github.sspanak.tt9.db.words.DictionaryLoader;
@@ -66,9 +67,19 @@ public abstract class TypingHandler extends KeyPadHandler {
 
 
 	protected void createSuggestionBar() {
-		suggestionOps = new SuggestionOps(this, settings, mainView, appHacks, inputType, textField, statusBar, this::onAcceptSuggestionsDelayed, this::onOK, () -> onOK(KeyEvent.KEYCODE_UNKNOWN));
+		suggestionOps = new SuggestionOps(this, settings, mainView, appHacks, inputType, textField, statusBar, this::onAcceptSuggestionsDelayed, this::onOK, this::onSwipeT9SuggestionHold);
 	}
 
+
+	private void onSwipeT9SuggestionHold() {
+		CmdAddWord addWord = new CmdAddWord();
+		if (settings.isMainLayoutNumpad() && mLanguage != null
+			&& "de".equals(mLanguage.getLocale().getLanguage()) && addWord.isAvailable(getFinalContext())) {
+			addWord.run(getFinalContext());
+		} else {
+			onOK(KeyEvent.KEYCODE_UNKNOWN);
+		}
+	}
 
 	public boolean shouldBeOff() {
 		return getCurrentInputConnection() == null || InputModeKind.isPassthrough(mInputMode);
@@ -165,6 +176,41 @@ public abstract class TypingHandler extends KeyPadHandler {
 		}
 	}
 
+
+	/**
+	 * Swipe-T9: remove the previous complete word on a single long press of Backspace.
+	 * Reuses the same text deletion helper as the existing Fast Delete implementation.
+	 */
+	public boolean onDeletePreviousWord() {
+		lowercaseNextJoinedPart = false;
+		if (InputModeKind.isPassthrough(mInputMode)) {
+			return false;
+		}
+		mindReader.clearContext();
+		suggestionOps.cancelDelayedAccept();
+		resetKeyRepeat();
+		final boolean hadSelection = !textSelection.isEmpty();
+		mInputMode.beforeDeleteText();
+		suggestionOps.commitCurrent(false, true);
+		if (hadSelection) {
+			deleteText(false);
+		} else {
+			String before = textField.getStringBeforeCursor(100);
+			int start = before.length();
+			while (start > 0) {
+				int ch = before.codePointBefore(start);
+				if (!Character.isLetterOrDigit(ch) && ch != '_') break;
+				start -= Character.charCount(ch);
+			}
+			// Keep preceding whitespace/punctuation intact. If no word, delete one character.
+			textField.deleteChars(mLanguage, Math.max(before.length() - start, 1));
+		}
+		mInputMode.reset();
+		updateShiftStateDebounced(null, mInputMode.noSuggestions(), false);
+		recompose(0, hadSelection);
+		forceShowWindow();
+		return true;
+	}
 
 	@Override
 	public boolean onBackspace(int repeat) {

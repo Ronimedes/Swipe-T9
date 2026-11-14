@@ -11,6 +11,7 @@ import io.github.sspanak.tt9.commands.CmdNextInputMode;
 import io.github.sspanak.tt9.commands.CmdNextKeyboard;
 import io.github.sspanak.tt9.commands.CmdNextLanguage;
 import io.github.sspanak.tt9.commands.CmdSelectKeyboard;
+import io.github.sspanak.tt9.ime.modes.InputModeKind;
 import io.github.sspanak.tt9.preferences.settings.SettingsStore;
 import io.github.sspanak.tt9.ui.Vibration;
 
@@ -90,6 +91,11 @@ public class SoftKeyLF4 extends BaseSwipeableKey {
 
 	@Override
 	protected String getTitle() {
+		if (tt9 != null && tt9.getSettings().isMainLayoutNumpad()
+			&& tt9.getLanguage() != null && "de".equals(tt9.getLanguage().getLocale().getLanguage())) {
+			if (InputModeKind.isPredictive(tt9.getInputMode())) return "T9";
+			if (tt9.isInputModeABC()) return "ABC";
+		}
 		return tt9 != null ? tt9.getInputModeName() : getContext().getString(R.string.virtual_key_input_mode);
 	}
 

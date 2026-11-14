@@ -1,0 +1,129 @@
+package io.github.sspanak.tt9.ui.main.swipe;
+
+import android.content.Context;
+import android.graphics.Rect;
+import android.util.AttributeSet;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewConfiguration;
+import android.widget.LinearLayout;
+
+import io.github.sspanak.tt9.R;
+import io.github.sspanak.tt9.ime.TraditionalT9;
+
+/**
+ * Experimental opt-in swipe mode for the large touchscreen numpad.
+ * Taps and ordinary long presses continue to go to the original soft keys.
+ * Only a deliberate drag takes over the touch stream, cancelling the original key.
+ */
+public final class SwipeT9TouchLayout extends LinearLayout {
+    private static final String PREFS = "swipe_t9_experiment";
+    private static final String ENABLED = "swipe_enabled";
+    private final int[] digitIds = {R.id.soft_key_2, R.id.soft_key_3, R.id.soft_key_4, R.id.soft_key_5,
+            R.id.soft_key_6, R.id.soft_key_7, R.id.soft_key_8, R.id.soft_key_9};
+    private final Rect hitRect = new Rect();
+    private final SwipeT9Gesture gesture = new SwipeT9Gesture();
+    private TraditionalT9 tt9;
+    private boolean tracking, captured;
+    private float startX, startY, lastX, lastY, pathLength, firstKeyWidth;
+    private int startDigit;
+
+    public SwipeT9TouchLayout(Context c) { super(c); }
+    public SwipeT9TouchLayout(Context c, AttributeSet a) { super(c, a); }
+    public SwipeT9TouchLayout(Context c, AttributeSet a, int s) { super(c, a, s); }
+
+    public void setTT9(TraditionalT9 handler) { this.tt9 = handler; }
+
+    public static boolean toggleEnabled(Context context) {
+        boolean enabled = !isEnabled(context);
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(ENABLED, enabled).apply();
+        return enabled;
+    }
+
+    private static boolean isEnabled(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(ENABLED, false);
+    }
+
+    private int digitAt(float x, float y) {
+        for (int i = 0; i < digitIds.length; i++) {
+            View key = findViewById(digitIds[i]);
+            if (key != null && key.isShown() && key.getGlobalVisibleRect(hitRect)
+                    && hitRect.contains((int) x, (int) y)) return digitIdsToNumber(i);
+        }
+        return -1;
+    }
+
+    private int digitIdsToNumber(int i) {
+        return new int[] {2,3,4,5,6,7,8,9}[i];
+    }
+
+    private void sample(float x, float y) {
+        int digit = digitAt(x,y);
+        if (digit < 2) return;
+        View key = findViewById(digitIds[digit - 2]);
+        if (key != null) gesture.add(digit, x, y, key.getWidth(), key.getHeight());
+    }
+
+    private void clear() {
+        tracking = captured = false;
+        pathLength = 0;
+        gesture.reset();
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        int action = ev.getActionMasked();
+        // One finger only. No interception with TalkBack, special input fields or ABC/numeric mode.
+        if (action == MotionEvent.ACTION_DOWN) {
+            clear();
+            if (tt9 == null || !isEnabled(getContext()) || !tt9.isSwipeT9Allowed()) {
+                return super.dispatchTouchEvent(ev);
+            }
+            startDigit = digitAt(ev.getRawX(), ev.getRawY());
+            if (startDigit < 2) return super.dispatchTouchEvent(ev);
+            tracking = true;
+            startX = lastX = ev.getRawX();
+            startY = lastY = ev.getRawY();
+            View first = findViewById(digitIds[startDigit - 2]);
+            firstKeyWidth = first == null ? 70 : Math.max(20, first.getWidth());
+            sample(startX, startY);
+            super.dispatchTouchEvent(ev);
+            return true;
+        }
+        if (!tracking) return super.dispatchTouchEvent(ev);
+        if (action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_CANCEL) {
+            if (!captured) super.dispatchTouchEvent(ev);
+            clear();
+            return true;
+        }
+        if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_UP) {
+            float x = ev.getRawX(), y = ev.getRawY();
+            pathLength += (float) Math.hypot(x - lastX, y - lastY);
+            lastX = x; lastY = y;
+            sample(x,y);
+            if (!captured && action == MotionEvent.ACTION_MOVE && pathLength >=
+                    Math.max(ViewConfiguration.get(getContext()).getScaledTouchSlop() * 2, firstKeyWidth * .35f)) {
+                // Cancel the key's normal tap/hold action, so one swipe is never typed twice.
+                MotionEvent cancel = MotionEvent.obtain(ev);
+                cancel.setAction(MotionEvent.ACTION_CANCEL);
+                super.dispatchTouchEvent(cancel);
+                cancel.recycle();
+                captured = true;
+            }
+            if (captured) {
+                if (action == MotionEvent.ACTION_UP) {
+                    String digits = gesture.getDigits();
+                    clear();
+                    if (digits.length() >= 2 && tt9 != null && tt9.isSwipeT9Allowed()) {
+                        tt9.onSwipeT9Sequence(digits);
+                    }
+                }
+                return true;
+            }
+            boolean result = super.dispatchTouchEvent(ev);
+            if (action == MotionEvent.ACTION_UP) clear();
+            return result;
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+}

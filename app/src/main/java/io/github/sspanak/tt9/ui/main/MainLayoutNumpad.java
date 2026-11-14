@@ -16,6 +16,7 @@ import io.github.sspanak.tt9.ime.TraditionalT9;
 import io.github.sspanak.tt9.preferences.settings.SettingsStore;
 import io.github.sspanak.tt9.preferences.settings.SettingsVirtualNumpad;
 import io.github.sspanak.tt9.ui.main.keys.SoftKey;
+import io.github.sspanak.tt9.ui.main.swipe.SwipeT9TouchLayout;
 import io.github.sspanak.tt9.ui.main.keys.SoftKeyArrow;
 import io.github.sspanak.tt9.ui.main.keys.SoftKeyText;
 import io.github.sspanak.tt9.util.Logger;
@@ -75,6 +76,14 @@ class MainLayoutNumpad extends MainLayoutClassic {
 
 		final View leftColumn = view.findViewById(R.id.numpad_column_fn_left);
 		final View rightColumn = view.findViewById(R.id.numpad_column_fn_right);
+
+		// A real row, but with no button, separates the active keys from OK.
+		View spacer = view.findViewById(R.id.soft_key_wrapper_5);
+		if (spacer != null) {
+			ViewGroup.LayoutParams spacerParams = spacer.getLayoutParams();
+			spacerParams.height = rightHeight;
+			spacer.setLayoutParams(spacerParams);
+		}
 
 		for (SoftKey key : getKeys()) {
 			if (key instanceof SoftKeyArrow && ((SoftKeyArrow) key).isSmall()) {
@@ -147,9 +156,8 @@ class MainLayoutNumpad extends MainLayoutClassic {
 		addKey(R.id.soft_key_lf4);
 
 		// right Fn
-		addKey(R.id.soft_key_swipe_t9_minus);
-		addKey(R.id.soft_key_swipe_t9_join);
 		addKey(R.id.soft_key_numpad_backspace);
+		addKey(R.id.soft_key_swipe_t9_join);
 		addKey(R.id.soft_key_numpad_ok);
 
 		// extra Fn keys
@@ -252,6 +260,13 @@ class MainLayoutNumpad extends MainLayoutClassic {
 		setKeyColumnWidth(tt9.getSettings().getNumpadFnKeyScale(null));
 	}
 
+
+	@Override
+	protected void enableClickHandlers() {
+		super.enableClickHandlers();
+		SwipeT9TouchLayout touch = view != null ? view.findViewById(R.id.main_soft_keys) : null;
+		if (touch != null) touch.setTT9(tt9);
+	}
 
 	@Override
 	protected void afterRender() {}

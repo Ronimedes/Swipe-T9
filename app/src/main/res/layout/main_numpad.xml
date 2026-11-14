@@ -11,7 +11,7 @@
 		<View style="@style/TTheme.Keyboard.TopSeparator" />
 		<include layout="@layout/panel_numpad_status_bar" />
 
-		<LinearLayout style="@style/TTheme.Numpad.Column.Container" android:id="@+id/main_soft_keys">
+		<io.github.sspanak.tt9.ui.main.swipe.SwipeT9TouchLayout style="@style/TTheme.Numpad.Column.Container" android:id="@+id/main_soft_keys">
 
 			<include layout="@layout/panel_numpad_left" />
 
@@ -25,7 +25,7 @@
 
 			<include layout="@layout/panel_numpad_right" />
 
-		</LinearLayout>
+		</io.github.sspanak.tt9.ui.main.swipe.SwipeT9TouchLayout>
 
 		<include
 			layout="@layout/panel_extra"

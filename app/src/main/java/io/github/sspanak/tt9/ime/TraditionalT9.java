@@ -317,6 +317,25 @@ public class TraditionalT9 extends PremiumHandler {
 	}
 
 
+	/** Swipe-T9 first test: apply a detected digit sequence via the existing T9 word engine. */
+	public boolean onSwipeT9Sequence(String digits) {
+		if (digits == null || digits.isEmpty() || digits.length() > 32 || shouldBeOff()
+			|| isFnPanelVisible() || !InputModeKind.isPredictive(mInputMode)) return false;
+		boolean result = false;
+		for (int i = 0; i < digits.length(); i++) {
+			int number = digits.charAt(i) - '0';
+			if (number < 2 || number > 9) return false;
+			result = onNumber(number, false, 0) || result;
+		}
+		return result;
+	}
+
+	/** Swipe is only active in normal predictive text fields, never in number/password modes. */
+	public boolean isSwipeT9Allowed() {
+		return !shouldBeOff() && !isFnPanelVisible() && InputModeKind.isPredictive(mInputMode)
+			&& settings.isMainLayoutNumpad() && !isTouchExplorationEnabled();
+	}
+
 	@Override
 	protected boolean onNumber(int key, boolean hold, int repeat) {
 		if (InputModeKind.isPredictive(mInputMode) && DictionaryLoader.autoLoad(this, settings, mLanguage)) {

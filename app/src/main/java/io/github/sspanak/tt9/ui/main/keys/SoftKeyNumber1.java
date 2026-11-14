@@ -107,7 +107,7 @@ public class SoftKeyNumber1 extends SoftKeyNumberSwipeable {
 		}
 
 		if (isGermanTextKey()) {
-			return ",";
+			return "1";
 		}
 
 		if (tt9 == null || !isHoldEnabled() || getHoldCommand() != null || (tt9.isInputTypeNumeric() && !tt9.isInputTypeDecimal() && !tt9.isInputTypePhone())) {

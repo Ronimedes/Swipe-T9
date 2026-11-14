@@ -157,7 +157,12 @@ public class AutoTextCase {
 			return InputMode.CASE_CAPITALIZE;
 		}
 
-		// start of sentence, excluding after "..."
+		// Swipe-T9 German: three consecutive dots can end a sentence too.
+		// Keep the dictionary's native capitalization for nouns in ordinary sentences.
+		if ("de".equals(language.getLocale().getLanguage()) && before.trim().endsWith("...")) {
+			return InputMode.CASE_CAPITALIZE;
+		}
+
 		if (Text.isStartOfSentence(before)) {
 			return InputMode.CASE_CAPITALIZE;
 		}

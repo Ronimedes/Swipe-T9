@@ -126,8 +126,10 @@ public class SoftKeyBackspace extends BaseSwipeableKey {
 	@Override
 	final protected void handleHold() {
 		isActionPerformed = true;
-		repeat++;
-		CmdBackspace.deleteText(tt9, repeat);
+		preventRepeat(); // Only one whole-word deletion per long press.
+		if (tt9 == null || !tt9.onDeletePreviousWord()) {
+			CmdBackspace.deleteText(tt9, 0);
+		}
 	}
 
 

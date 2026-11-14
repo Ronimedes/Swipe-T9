@@ -28,7 +28,7 @@ public class SettingsVirtualNumpad extends SettingsCustomKeyActions {
 	public final static int NUMPAD_SHAPE_LONG_SPACE = 2;
 
 	public static final String DEFAULT_LFN_KEY_ORDER = "1234";
-	public static final String DEFAULT_RFN_KEY_ORDER = "5678";
+	public static final String DEFAULT_RFN_KEY_ORDER = "6758";
 
 	public static final HashMap<Character, Integer> KEY_ORDER_MAP = new HashMap<>() {{
 		put('1', R.id.soft_key_wrapper_1);
@@ -77,7 +77,9 @@ public class SettingsVirtualNumpad extends SettingsCustomKeyActions {
 	}
 
 	@NonNull public String getRfnKeyOrder() {
-		return prefs.getString("pref_rfn_key_order", DEFAULT_RFN_KEY_ORDER);
+		// Migrate old default order while retaining genuinely customized layouts.
+		String order = prefs.getString("pref_rfn_key_order", DEFAULT_RFN_KEY_ORDER);
+		return "5678".equals(order) ? DEFAULT_RFN_KEY_ORDER : order;
 	}
 
 	public FnKeyOrderValidator setFnKeyOrder(String left, String right) {
@@ -127,7 +129,7 @@ public class SettingsVirtualNumpad extends SettingsCustomKeyActions {
 	}
 
 	public int getNumpadShape() {
-		return getStringifiedInt(DropDownNumpadShape.NAME, NUMPAD_SHAPE_SQUARE);
+		return getStringifiedInt(DropDownNumpadShape.NAME, NUMPAD_SHAPE_LONG_SPACE);
 	}
 
 	public boolean isNumpadShapeLongSpace() { return getNumpadShape() == NUMPAD_SHAPE_LONG_SPACE; }
