@@ -19,6 +19,8 @@ import io.github.sspanak.tt9.languages.LanguageCollection;
 import io.github.sspanak.tt9.preferences.settings.SettingsStore;
 import io.github.sspanak.tt9.ui.UI;
 import io.github.sspanak.tt9.ui.main.swipe.SwipeT9Memory;
+import io.github.sspanak.tt9.ui.main.swipe.SwipeT9History;
+import java.util.ArrayList;
 import io.github.sspanak.tt9.util.Text;
 import io.github.sspanak.tt9.ime.modes.InputMode;
 import io.github.sspanak.tt9.util.Logger;
@@ -28,6 +30,8 @@ import io.github.sspanak.tt9.util.sys.SystemSettings;
 
 public class TraditionalT9 extends PremiumHandler {
 	private static final String LOG_TAG = "MAIN";
+    private long pendingSwipeLogId = -1;
+    private int pendingSwipeSequenceLength = -1;
 
 	private Future<?> asyncInitThread;
 
@@ -326,9 +330,34 @@ public class TraditionalT9 extends PremiumHandler {
 		return onSwipeT9Sequence(digits, null);
 	}
 
-	public boolean onSwipeT9Sequence(String digits, float[] drawing) {
+    public boolean onSwipeT9Sequence(String digits, float[] drawing) {
+        return onSwipeT9Sequence(digits, drawing, -1);
+    }
+
+    public boolean isSwipeT9DiagnosticAllowed() {
+        EditorInfo info = getCurrentInputEditorInfo();
+        return isSwipeT9Allowed() && (inputType == null || !inputType.isPassword())
+                && (info == null || (info.imeOptions & EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) == 0);
+    }
+
+    public void recordSwipeT9ShownSuggestions(ArrayList<String> suggestions) {
+        if (pendingSwipeLogId < 0 || mInputMode == null) return;
+        if (mInputMode.getSequenceLength() < pendingSwipeSequenceLength) return;
+        SwipeT9History.updateCandidates(this, pendingSwipeLogId, "shown", suggestions);
+        pendingSwipeLogId = -1;
+    }
+
+    public boolean onSwipeT9Sequence(String digits, float[] drawing, long logId) {
 		if (digits == null || digits.isEmpty() || digits.length() > 32 || shouldBeOff()
 			|| isFnPanelVisible() || !InputModeKind.isPredictive(mInputMode)) return false;
+        pendingSwipeLogId = -1;
+        if (logId != -1 && isSwipeT9DiagnosticAllowed()) {
+            pendingSwipeLogId = logId;
+            pendingSwipeSequenceLength = mInputMode.getSequenceLength() + digits.length();
+            // Do not launch a second getWords() request here. DataStore cancels
+            // concurrent dictionary searches, which would break live suggestions.
+            // The live suggestions are saved by recordSwipeT9ShownSuggestions().
+        }
 		// Use confirmed, local prototypes only when at least three selections agree.
 		// If there is any doubt, preserve the original T9 dictionary behavior.
 		String language = mLanguage == null ? null : mLanguage.getLocale().getLanguage();
@@ -338,6 +367,12 @@ public class TraditionalT9 extends PremiumHandler {
 			String chosen = textCase == InputMode.CASE_CAPITALIZE || textCase == InputMode.CASE_UPPER
 				? new Text(mLanguage, learned).toTextCase(textCase) : learned;
 			if (onText(chosen, false)) {
+                if (logId != -1) {
+                    ArrayList<String> learnedChoices = new ArrayList<>();
+                    learnedChoices.add(chosen);
+                    SwipeT9History.updateCandidates(this, logId, "shown", learnedChoices);
+                    pendingSwipeLogId = -1;
+                }
 				markSwipeT9Entered();
 				return true;
 			}
@@ -357,7 +392,7 @@ public class TraditionalT9 extends PremiumHandler {
 
 	/** Swipe is only active in normal predictive text fields, never in number/password modes. */
 	public boolean isSwipeT9Allowed() {
-		return !shouldBeOff() && !isFnPanelVisible() && InputModeKind.isPredictive(mInputMode)
+		return !shouldBeOff() && !isFnPanelVisible() && (inputType == null || !inputType.isPassword()) && InputModeKind.isPredictive(mInputMode)
 			&& settings.isMainLayoutNumpad() && !isTouchExplorationEnabled();
 	}
 

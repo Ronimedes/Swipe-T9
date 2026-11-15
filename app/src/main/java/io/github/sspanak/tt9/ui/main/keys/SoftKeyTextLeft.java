@@ -2,6 +2,8 @@ package io.github.sspanak.tt9.ui.main.keys;
 
 import android.content.Context;
 import android.util.AttributeSet;
+import android.view.KeyEvent;
+import io.github.sspanak.tt9.ime.helpers.Key;
 
 import io.github.sspanak.tt9.commands.CmdUndo;
 import io.github.sspanak.tt9.preferences.settings.SettingsStore;
@@ -13,7 +15,7 @@ public class SoftKeyTextLeft extends SoftKeyText {
 
 	@Override
 	protected String getTopText() {
-		return useQuestionHold() ? "?" : super.getTopText();
+		return useQuestionHold() ? "?123" : super.getTopText();
 	}
 
 
@@ -34,7 +36,12 @@ public class SoftKeyTextLeft extends SoftKeyText {
 		if (useQuestionHold()) {
 			questionHold = true;
 			preventRepeat();
-			tt9.onText("?", false);
+            // The exclamation key owns all punctuation except the direct dot.
+            int code = Key.numberToCode(tt9.getSettings(), 1);
+            if (code >= 0) {
+                tt9.onKeyDown(code, new KeyEvent(KeyEvent.ACTION_DOWN, code));
+                tt9.onKeyUp(code, new KeyEvent(KeyEvent.ACTION_UP, code));
+            }
 		} else {
 			super.handleHold();
 		}
@@ -42,7 +49,7 @@ public class SoftKeyTextLeft extends SoftKeyText {
 
 	@Override
 	protected String getHoldText() {
-		return useQuestionHold() ? "?" : super.getHoldText();
+		return useQuestionHold() ? "Satzzeichen" : super.getHoldText();
 	}
 
 

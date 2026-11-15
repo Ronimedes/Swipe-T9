@@ -174,14 +174,15 @@ class SettingsKeyChars extends SettingsInput {
 			}
 			case 1 -> {
 				chars = new ArrayList<>(getChars1AsList(language));
-				// The large Swipe-T9 layout uses key 1 for '.', but the user still needs
-				// to type a literal 1 from its punctuation selection.
-				if ("de".equals(language.getLocale().getLanguage())) {
-					// Keep the digit 1 right next to comma in the punctuation chooser.
-					chars.remove("1");
-					int comma = chars.indexOf(",");
-					chars.add(comma >= 0 ? comma + 1 : 0, "1");
-				}
+                // On our German layout: dot is a direct tap on key 1,
+                // literal 1 is its hold action. Punctuation lives in this tray.
+                if ("de".equals(language.getLocale().getLanguage())) {
+                    chars.remove(".");
+                    chars.remove("1");
+                    for (String symbol : new String[] {"?", "!", ",", "-", "„", "“"}) {
+                        if (!chars.contains(symbol)) chars.add(symbol);
+                    }
+                }
 				if (!getCharsExtra(language, CHARS_GROUP_1).isEmpty()) {
 					chars.add(SuggestionsBar.SHOW_GROUP_1_SUGGESTION);
 				}

@@ -382,4 +382,8 @@
 	<string name="swipe_t9_learn_summary">Nur bewusst ausgewählte Wörter und zugehörige Bewegungen lokal speichern; keine Übertragung.</string>
 	<string name="swipe_t9_clear_learning">Gelernte Wischbewegungen löschen</string>
 	<string name="swipe_t9_clear_learning_summary">Löscht alle lokal gespeicherten Wischbeispiele.</string>
+    <string name="swipe_t9_debug_history">Wischprotokoll aufzeichnen (maximal 100)</string>
+    <string name="swipe_t9_debug_history_summary">Nur bei Bedarf aktivieren. Tastenfolge, Fingerweg, Schleifen und mögliche Wörter lokal speichern; keine Passwörter.</string>
+    <string name="swipe_t9_history">Letzte 100 Wischbewegungen ansehen</string>
+    <string name="swipe_t9_history_summary">Spuren, Tastenfolgen und Wortvorschläge prüfen oder Protokoll löschen.</string>
 </resources>

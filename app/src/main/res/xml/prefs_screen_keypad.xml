@@ -24,6 +24,18 @@
 			android:title="@string/swipe_t9_learn"
 			android:summary="@string/swipe_t9_learn_summary" />
 
+        <SwitchPreferenceCompat
+            android:key="swipe_t9_debug_history"
+            android:defaultValue="false"
+            android:dependency="swipe_t9_enabled"
+            android:title="@string/swipe_t9_debug_history"
+            android:summary="@string/swipe_t9_debug_history_summary" />
+
+        <Preference
+            android:key="swipe_t9_history"
+            android:title="@string/swipe_t9_history"
+            android:summary="@string/swipe_t9_history_summary" />
+
 		<Preference
 			android:key="swipe_t9_clear_learning"
 			android:title="@string/swipe_t9_clear_learning"

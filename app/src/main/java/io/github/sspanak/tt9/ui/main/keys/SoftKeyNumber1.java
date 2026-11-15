@@ -34,8 +34,8 @@ public class SoftKeyNumber1 extends SoftKeyNumberSwipeable {
 		if (isGermanTextKey()) {
 			punctuationLongPress = true;
 			preventRepeat();
-			// Trigger the original T9 punctuation selection (including comma).
-			super.handleRelease();
+			// A long press is a literal 1, just like digits 2-9 and 0.
+            if (tt9 != null) tt9.onText("1", false);
 		} else {
 			super.handleHold();
 		}

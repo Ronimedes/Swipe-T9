@@ -247,13 +247,18 @@ public final class SwipeT9TouchLayout extends LinearLayout {
             if (captured) {
                 if (action == MotionEvent.ACTION_UP) {
                     String digits = gesture.getDigits();
+                    String loops = gesture.getLoopDetails();
+                    int endingAt = digitAt(ev.getX(), ev.getY());
                     float[] drawing = finishedTrace();
+                    long logId = tt9 != null && tt9.isSwipeT9DiagnosticAllowed()
+                            ? SwipeT9History.add(getContext(), digits, drawing, loops, startDigit, endingAt, true,
+                                    tt9.getLanguage() == null ? -1 : tt9.getLanguage().getId()) : -1;
                     fadingTrail = true;
                     fadeStart = SystemClock.uptimeMillis();
                     clear();
                     invalidate();
                     if (digits.length() >= 2 && tt9 != null && tt9.isSwipeT9Allowed()) {
-                        tt9.onSwipeT9Sequence(digits, drawing);
+                        tt9.onSwipeT9Sequence(digits, drawing, logId);
                     }
                 }
                 return true;
@@ -261,6 +266,16 @@ public final class SwipeT9TouchLayout extends LinearLayout {
             // A real tap must still reach the original T9 key. Replaying the
             // stored DOWN now makes it impossible for an unfinished swipe to
             // produce a leading number through a key long-press callback.
+            if (action == MotionEvent.ACTION_UP) {
+                // Record failed drags as well (e.g. "Liebe" becoming a single "d").
+                float minDistance = Math.max(ViewConfiguration.get(getContext()).getScaledTouchSlop() * 2,
+                        firstKeyWidth * .35f);
+                if (pathLength >= minDistance && tt9 != null && tt9.isSwipeT9DiagnosticAllowed()) {
+                    SwipeT9History.add(getContext(), gesture.getDigits(), finishedTrace(),
+                            gesture.getLoopDetails(), startDigit, digitAt(ev.getX(), ev.getY()), false,
+                            tt9.getLanguage() == null ? -1 : tt9.getLanguage().getId());
+                }
+            }
             if (action == MotionEvent.ACTION_UP && !normalKeyStarted) forwardPendingDown();
             boolean result = normalKeyStarted ? super.dispatchTouchEvent(ev) : true;
             if (action == MotionEvent.ACTION_UP) {

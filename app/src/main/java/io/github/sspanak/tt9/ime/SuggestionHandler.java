@@ -191,6 +191,9 @@ abstract public class SuggestionHandler extends TypingHandler {
 		}
 
 		final ArrayList<String> suggestions = mInputMode.getSuggestions();
+        if (this instanceof TraditionalT9) {
+            ((TraditionalT9) this).recordSwipeT9ShownSuggestions(suggestions);
+        }
 		suggestionOps.set(suggestions, mInputMode.getRecommendedSuggestionIdx(), mInputMode.containsGeneratedSuggestions());
 
 		// either accept the first one automatically (when switching from punctuation to text

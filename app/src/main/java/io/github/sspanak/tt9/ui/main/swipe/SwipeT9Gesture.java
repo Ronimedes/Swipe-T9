@@ -12,6 +12,7 @@ public final class SwipeT9Gesture {
     private int sampleCount;
     private int digit = -1;
     private boolean loopRecognized;
+    private final StringBuilder detectedLoops = new StringBuilder();
     private float traveled;
     private float keySize;
     private float lowX, highX, lowY, highY;
@@ -20,6 +21,7 @@ public final class SwipeT9Gesture {
 
     public void reset() {
         sequence.setLength(0);
+        detectedLoops.setLength(0);
         digit = -1;
         sampleCount = 0;
         loopRecognized = false;
@@ -29,6 +31,17 @@ public final class SwipeT9Gesture {
     }
 
     public String getDigits() { return sequence.toString(); }
+
+    public String getLoopDetails() { return detectedLoops.toString(); }
+
+    private void loopFound(String kind, float x, float y) {
+        if (detectedLoops.length() > 0) detectedLoops.append("; ");
+        detectedLoops.append(digit).append(" (").append(kind).append(") bei [")
+                .append(Math.round(sampleX[0])).append(",")
+                .append(Math.round(sampleY[0])).append("] bis [")
+                .append(Math.round(x)).append(",")
+                .append(Math.round(y)).append("]");
+    }
 
     public void add(int nextDigit, float x, float y, float keyWidth, float keyHeight) {
         if (nextDigit < 2 || nextDigit > 9 || sequence.length() >= 32) return;
@@ -75,6 +88,7 @@ public final class SwipeT9Gesture {
         if (!loopRecognized && horizontalTurns >= 2 && zigzagTravel + horizontalLeg >= 1.1f * keySize
                 && highY - lowY < .25f * keySize && highX - lowX >= .32f * keySize) {
             sequence.append((char) ('0' + digit));
+            loopFound("Zickzack", x, y);
             loopRecognized = true;
         }
         if (!loopRecognized && sampleCount >= 7 && traveled >= 1.10f * keySize
@@ -89,6 +103,7 @@ public final class SwipeT9Gesture {
                     }
                     if (path >= .85f * keySize) {
                         sequence.append((char) ('0' + digit));
+                        loopFound("Kreis", x, y);
                         loopRecognized = true;
                         break;
                     }
