@@ -486,6 +486,38 @@ public abstract class TypingHandler extends KeyPadHandler {
 
 
 	/**
+	 * Swipe-T9 v0.2.10: every swiped word starts as a new word.
+	 * A word that is still being composed (e.g. the previous swipe) is accepted first,
+	 * then a space is inserted unless the cursor already follows a space or an opening
+	 * bracket/quote. Editing the previous word (backspace, suggestion bar) is unaffected,
+	 * because this only runs when a new swipe arrives.
+	 */
+	protected void prepareSwipeT9WordStart() {
+		if (shouldBeOff() || mLanguage == null) return;
+		suggestionOps.cancelDelayedAccept();
+		if (mInputMode.getSequenceLength() > 0) {
+			String lastWord = suggestionOps.acceptIncomplete();
+			if (!lastWord.isEmpty()) {
+				onSwipeT9WordAccepted(lastWord);
+				mInputMode.onAcceptSuggestion(lastWord);
+			}
+		}
+		String before = textField.getStringBeforeCursor(1);
+		if (!before.isEmpty()) {
+			char c = before.charAt(before.length() - 1);
+			if (!Character.isWhitespace(c) && "([{„\"'‚«»¿¡-/".indexOf(c) < 0) {
+				textField.setText(" ");
+			}
+		}
+		String[] surrounding = textField.getSurroundingStringForAutoAssistance(settings, mInputMode);
+		mInputMode.determineNextWordTextCase(surrounding[0], -1);
+	}
+
+	/** v0.2.10: overridden to note the accepted word in the swipe log. */
+	protected void onSwipeT9WordAccepted(String word) {}
+
+
+	/**
 	 * Swipe-T9: accept the visible suggestion WITHOUT the automatic trailing space.
 	 * The next T9 sequence can therefore continue a compound word.
 	 */

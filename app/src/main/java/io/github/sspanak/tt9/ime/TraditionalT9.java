@@ -364,6 +364,11 @@ public class TraditionalT9 extends PremiumHandler {
     private long lastChosenSwipeTime = 0;
 
     @Override
+    protected void onSwipeT9WordAccepted(String word) {
+        recordSwipeT9Chosen(word);
+    }
+
+    @Override
     protected void onSwipeT9Selected(String word, boolean learned) {
         boolean fresh = System.currentTimeMillis() - lastChosenSwipeTime < 2000;
         long id = lastChosenSwipeLogId >= 0 && fresh ? lastChosenSwipeLogId : chosenSwipeLogId;
@@ -400,12 +405,13 @@ public class TraditionalT9 extends PremiumHandler {
         final io.github.sspanak.tt9.languages.Language lang = mLanguage;
         DataStore.getWordsForSequences(
             found -> swipeLookupHandler.post(() -> applySwipeT9Lookup(token, raw, found, drawing, logId)),
-            lang, sequences, 6, 40
+            lang, sequences, 6, 60
         );
     }
 
     private void applySwipeT9Lookup(int token, String raw, java.util.LinkedHashMap<String, ArrayList<String>> found, float[] drawing, long logId) {
         if (token != swipeLookupToken || !isSwipeT9Allowed() || mInputMode == null) return;
+        prepareSwipeT9WordStart();
         String best = raw;
         for (java.util.Map.Entry<String, ArrayList<String>> e : found.entrySet()) {
             boolean usable = false;
@@ -460,6 +466,7 @@ public class TraditionalT9 extends PremiumHandler {
     public boolean onSwipeT9Sequence(String digits, float[] drawing, long logId) {
 		if (digits == null || digits.isEmpty() || digits.length() > 32 || shouldBeOff()
 			|| isFnPanelVisible() || !InputModeKind.isPredictive(mInputMode)) return false;
+        prepareSwipeT9WordStart();
         pendingSwipeLogId = -1;
         chosenSwipeLogId = -1;
         if (logId != -1 && isSwipeT9DiagnosticAllowed()) {

@@ -73,11 +73,27 @@ public final class SwipeT9Decoder {
 			if (merged.length() >= 2) choices.add(new Choice(merged, cost));
 			String repeated = build(segments, dropped, false);
 			if (!repeated.equals(merged) && repeated.length() >= 2) choices.add(new Choice(repeated, cost + 0.35f));
-			// v0.2.9: double letters without a loop (alles, essen, Mann): double one meant key.
+			// v0.2.10: repeated letters without a loop. On T9 a run like "ede" (jedes) or "ffe"
+			// (getroffen) is the same key 3 times. Try 1-3 extra presses on one meant key,
+			// and one extra press on two different keys (Kaffee, Messer).
+			ArrayList<Integer> meant = new ArrayList<>();
 			for (int d = 0; d < segments.length; d++) {
-				if (dropped[d] || segments[d].doubled || segments[d].strength < 0.5f) continue;
-				String doubled = buildWithDouble(segments, dropped, d);
-				if (doubled.length() >= 3) choices.add(new Choice(doubled, cost + DOUBLE_COST));
+				if (!dropped[d] && segments[d].strength >= 0.5f) meant.add(d);
+			}
+			int[] extra = new int[segments.length];
+			for (int a = 0; a < meant.size(); a++) {
+				for (int times = 1; times <= 3; times++) {
+					extra[meant.get(a)] = times;
+					addRepeated(choices, segments, dropped, extra, cost + DOUBLE_COST + 0.2f * (times - 1));
+				}
+				extra[meant.get(a)] = 0;
+				for (int b = a + 1; b < meant.size(); b++) {
+					extra[meant.get(a)] = 1;
+					extra[meant.get(b)] = 1;
+					addRepeated(choices, segments, dropped, extra, cost + DOUBLE_COST * 2.2f);
+					extra[meant.get(b)] = 0;
+				}
+				extra[meant.get(a)] = 0;
 			}
 		}
 
@@ -116,20 +132,20 @@ public final class SwipeT9Decoder {
 	}
 
 
-	@NonNull
-	private static String buildWithDouble(@NonNull Segment[] segments, @NonNull boolean[] dropped, int doubleAt) {
+	private static void addRepeated(@NonNull ArrayList<Choice> choices, @NonNull Segment[] segments, @NonNull boolean[] dropped, @NonNull int[] extra, float cost) {
 		StringBuilder sb = new StringBuilder();
 		int last = -1;
 		for (int i = 0; i < segments.length; i++) {
 			if (dropped[i]) continue;
 			Segment s = segments[i];
-			if (s.digit == last && !s.doubled && i != doubleAt) continue;
+			if (s.digit == last && !s.doubled && extra[i] == 0) continue;
 			sb.append((char) ('0' + s.digit));
-			if (s.doubled || i == doubleAt) sb.append((char) ('0' + s.digit));
+			if (s.doubled) sb.append((char) ('0' + s.digit));
+			for (int k = 0; k < extra[i]; k++) sb.append((char) ('0' + s.digit));
 			last = s.digit;
 			if (sb.length() >= 32) break;
 		}
-		return sb.toString();
+		if (sb.length() >= 3 && sb.length() <= 32) choices.add(new Choice(sb.toString(), cost));
 	}
 
 
