@@ -62,6 +62,6 @@
 	<dimen name="numpad_key_overlay_hold_text_spacing_right">5dp</dimen>
 
 	<dimen name="numpad_suggestion_text_size">17sp</dimen>
-	<dimen name="numpad_suggestion_height">40sp</dimen>
+	<dimen name="numpad_suggestion_height">36sp</dimen>
 	<dimen name="numpad_suggestion_min_width">36sp</dimen>
 </resources>

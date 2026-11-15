@@ -3,7 +3,6 @@ package io.github.sspanak.tt9.ui.main.keys;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.Gravity;
-import android.view.KeyEvent;
 
 import androidx.annotation.NonNull;
 
@@ -12,16 +11,15 @@ import io.github.sspanak.tt9.commands.CmdNextInputMode;
 import io.github.sspanak.tt9.commands.CmdNextKeyboard;
 import io.github.sspanak.tt9.commands.CmdNextLanguage;
 import io.github.sspanak.tt9.commands.CmdSelectKeyboard;
+import io.github.sspanak.tt9.commands.CmdTogglePredictiveMode;
 import io.github.sspanak.tt9.ime.modes.InputModeKind;
 import io.github.sspanak.tt9.ime.modes.InputMode;
-import io.github.sspanak.tt9.ime.helpers.Key;
 import io.github.sspanak.tt9.preferences.settings.SettingsStore;
 import io.github.sspanak.tt9.ui.Vibration;
 
 public class SoftKeyLF4 extends BaseSwipeableKey {
 	private final CmdNextLanguage nextLanguage = new CmdNextLanguage();
 	private boolean switchedModeByHold = false;
-    private int lastTextMode = InputMode.MODE_PREDICTIVE;
 
 	public SoftKeyLF4(Context context) {
 		super(context);
@@ -83,14 +81,11 @@ public class SoftKeyLF4 extends BaseSwipeableKey {
 	protected void handleHold() {
 		preventRepeat();
 		if (isGermanNumpad()) {
+			// Swipe-T9: one fixed rule. Hold = letters <-> numbers.
 			switchedModeByHold = true;
-            if (tt9.isInputModeNumeric()) {
-                tt9.setInputMode(lastTextMode);
-            } else {
-                lastTextMode = tt9.getInputMode().getId();
-                tt9.setInputMode(InputMode.MODE_123);
-            }
-            vibrate(Vibration.getHoldVibration());
+			if (tt9.toggleNumericMode()) {
+				vibrate(Vibration.getHoldVibration());
+			}
 			return;
 		}
 		if (nextLanguage.isAvailable(tt9) && nextLanguage.run(tt9)) {
@@ -105,17 +100,12 @@ public class SoftKeyLF4 extends BaseSwipeableKey {
 			return true;
 		}
 		if (!notSwiped()) return false;
-        if (isGermanNumpad() && tt9.isInputModeNumeric()) {
-            tt9.setInputMode(lastTextMode);
-            return true;
-        }
-        if (isGermanNumpad()) {
-            // The same key opens punctuation; numeric mode offers direct return to T9.
-			int code = Key.numberToCode(tt9.getSettings(), 1);
-			if (code < 0) return false;
-			tt9.onKeyDown(code, new KeyEvent(KeyEvent.ACTION_DOWN, code));
-			tt9.onKeyUp(code, new KeyEvent(KeyEvent.ACTION_UP, code));
-			return true;
+		if (isGermanNumpad()) {
+			// Swipe-T9: one fixed rule. Tap = T9 <-> ABC; in 123 a tap returns to the letters.
+			if (tt9.isInputModeNumeric()) {
+				return tt9.toggleNumericMode();
+			}
+			return new CmdTogglePredictiveMode().run(tt9);
 		}
 		return new CmdNextInputMode().run(tt9);
 	}
@@ -132,22 +122,25 @@ public class SoftKeyLF4 extends BaseSwipeableKey {
 
 	@Override
 	protected String getAccessibilityText() {
-		return isGermanNumpad() ? "Sonderzeichen; halten für Zahlenmodus"
-			: getContext().getString(R.string.function_next_mode);
+		if (isGermanNumpad()) {
+			if (tt9.isInputModeNumeric()) return "Zahlenmodus; tippen oder halten für Buchstaben";
+			return (tt9.isInputModeABC() ? "ABC-Modus; tippen für T9" : "T9-Modus; tippen für ABC") + "; halten für Zahlen";
+		}
+		return getContext().getString(R.string.function_next_mode);
 	}
 
 	@Override
 	protected String getTitle() {
         if (isGermanNumpad()) {
-            if (tt9.isInputModeNumeric()) return "123 ↩";
-            return tt9.isInputModeABC() ? "ABC ?" : "T9 ?";
+			if (tt9.isInputModeNumeric()) return "123";
+			return tt9.isInputModeABC() ? "abc" : "T9";
         }
 		return tt9 != null ? tt9.getInputModeName() : getContext().getString(R.string.virtual_key_input_mode);
 	}
 
 	@Override
 	protected float getTitleScale() {
-		if (isGermanNumpad()) return super.getTitleScale() * .68f;
+		if (isGermanNumpad()) return super.getTitleScale() * .8f;
 		return super.getTitleScale() * (isBopomofo() && tt9.isInputModeABC() ? 0.63f : 0.9f);
 	}
 
@@ -162,6 +155,12 @@ public class SoftKeyLF4 extends BaseSwipeableKey {
 			return super.getCornerElementScale(ICON_POSITION_TOP_RIGHT) * 0.75f;
 		}
 		return super.getCornerElementScale(position);
+	}
+
+	@Override
+	protected String getHoldText() {
+		if (!isGermanNumpad()) return super.getHoldText();
+		return tt9.isInputModeNumeric() ? "abc" : "123";
 	}
 
 	@Override

@@ -90,6 +90,7 @@ public class TraditionalT9 extends PremiumHandler {
 	@Override
 	public void onFinishInputView(boolean finishingInput) {
 		super.onFinishInputView(finishingInput);
+		io.github.sspanak.tt9.ui.main.keys.SwipeT9SymbolPopup.dismiss();
 		onFinishTyping(finishingInput);
 	}
 

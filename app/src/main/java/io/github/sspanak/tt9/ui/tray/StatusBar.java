@@ -30,6 +30,9 @@ public class StatusBar {
 	@NonNull private final DictionaryLoadingBar loadingBar;
 	@NonNull private final Runnable onLoadingFinished;
 	@NonNull private final Runnable onSwipe;
+	@Nullable private Runnable onTap = null;
+	private float tapStartY = 0;
+	private float tapStartX = 0;
 
 
 	public StatusBar(@NonNull Context context, @NonNull SettingsStore settings, @NonNull ResizableMainView mainView, @NonNull Runnable onDictionaryLoadingFinished, @NonNull Runnable onSwipe) {
@@ -62,6 +65,8 @@ public class StatusBar {
 
 		switch (action) {
 			case MotionEvent.ACTION_DOWN:
+				tapStartX = event.getRawX();
+				tapStartY = event.getRawY();
 				mainView.onResizeStart(event.getRawY());
 				return true;
 			case MotionEvent.ACTION_MOVE:
@@ -70,6 +75,13 @@ public class StatusBar {
 				}
 				return true;
 			case MotionEvent.ACTION_UP:
+				// Swipe-T9: a plain tap on the mode label toggles T9 <-> ABC.
+				final float slop = 12 * v.getResources().getDisplayMetrics().density;
+				if (onTap != null && Math.abs(event.getRawY() - tapStartY) < slop && Math.abs(event.getRawX() - tapStartX) < slop) {
+					onTap.run();
+					return true;
+				}
+
 				long now = System.currentTimeMillis();
 				if (settings.getDoubleTapResize() && now - lastClickTime < SettingsStore.SOFT_KEY_DOUBLE_CLICK_DELAY) {
 					mainView.onSnap();
@@ -83,6 +95,11 @@ public class StatusBar {
 		}
 
 		return false;
+	}
+
+
+	public void setOnTap(@Nullable Runnable onTap) {
+		this.onTap = onTap;
 	}
 
 

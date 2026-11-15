@@ -32,6 +32,7 @@
 			style="@style/TTheme.Numpad.Key.LF4"
 			android:id="@+id/soft_key_lf4" />
 		<include layout="@layout/key_overlay_lf4" />
+		<include layout="@layout/key_overlay_number_hold_text" />
 	</RelativeLayout>
 
 	<RelativeLayout style="@style/TTheme.Numpad.Key.Overlay.Wrapper" android:id="@+id/soft_key_wrapper_r">

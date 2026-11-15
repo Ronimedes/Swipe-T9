@@ -92,6 +92,16 @@ abstract class UiHandler extends AbstractHandler {
 		mainView.getView();
 		statusBar = new StatusBar(this, settings, mainView, this::resetStatus, () -> getSuggestionOps().cancelDelayedAccept());
 		statusBar.setColorScheme();
+		statusBar.setOnTap(() -> {
+			if (!(this instanceof TraditionalT9 tt9) || !settings.isMainLayoutNumpad()) {
+				return;
+			}
+			if (tt9.isInputModeNumeric()) {
+				tt9.toggleNumericMode();
+			} else {
+				new io.github.sspanak.tt9.commands.CmdTogglePredictiveMode().run(tt9);
+			}
+		});
 		createSuggestionBar();
 		getSuggestionOps().setColorScheme();
 	}

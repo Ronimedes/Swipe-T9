@@ -213,6 +213,10 @@ public class ResizableMainView extends StaticMainView implements View.OnAttachSt
 		}
 
 		height = Math.min(height, maxHeight);
+		if (main instanceof MainLayoutNumpad) {
+			// Swipe-T9: never squeeze the 4-row numpad. A partial height clips the top and bottom keys.
+			height = Math.max(height, main.getHeight(false));
+		}
 		if (main.setKeyboardHeight(height)) {
 			this.height = height;
 			return true;

@@ -15,6 +15,42 @@ import io.github.sspanak.tt9.util.Ternary;
 abstract public class CommandHandler extends TextEditingHandler {
 	private final CmdCommandPalette cmdPalette = new CmdCommandPalette();
 
+	/** Swipe-T9: the last letter mode (T9 or ABC), shared by all keys. */
+	private int lastTextModeId = InputMode.MODE_PREDICTIVE;
+
+
+	/**
+	 * Swipe-T9: letters <-> numbers. From 123 we always return to the letter mode we came from.
+	 */
+	public boolean toggleNumericMode() {
+		if (mInputMode == null) {
+			return false;
+		}
+
+		if (InputModeKind.isNumeric(mInputMode)) {
+			int target = lastTextModeId;
+			if (!allowedInputModes.contains(target)) {
+				target = allowedInputModes.contains(InputMode.MODE_PREDICTIVE) ? InputMode.MODE_PREDICTIVE : InputMode.MODE_ABC;
+			}
+			if (!allowedInputModes.contains(target)) {
+				return false;
+			}
+			setInputMode(target);
+			return true;
+		}
+
+		if (!allowedInputModes.contains(InputMode.MODE_123)) {
+			return false;
+		}
+		setInputMode(InputMode.MODE_123);
+		return true;
+	}
+
+
+	public int getLastTextModeId() {
+		return lastTextModeId;
+	}
+
 
 	@Override
 	protected Ternary onBack() {
@@ -74,6 +110,9 @@ abstract public class CommandHandler extends TextEditingHandler {
 		resetKeyRepeat();
 
 		mInputMode = InputMode.getInstance(settings, mLanguage, inputType, textField, modeId);
+		if (InputModeKind.isABC(mInputMode) || InputModeKind.isPredictive(mInputMode)) {
+			lastTextModeId = mInputMode.getId();
+		}
 		determineTextCase();
 
 		if (modeId != InputMode.MODE_RECOMPOSING) {

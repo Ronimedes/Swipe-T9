@@ -51,10 +51,14 @@ jobs:
       - name: Android Test APK bauen
         run: ./gradlew assembleFullDebug
 
+      - name: Version auslesen
+        id: version
+        run: echo "name=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle)" >> "$GITHUB_OUTPUT"
+
       - name: APK bereitstellen
         uses: actions/upload-artifact@v4
         with:
-          name: Swipe-T9-v0.2.0-APK
+          name: Swipe-T9-v${{ steps.version.outputs.name }}-APK
           path: app/build/outputs/apk/full/debug/*.apk
           if-no-files-found: error
           retention-days: 14
