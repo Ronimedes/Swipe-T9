@@ -117,6 +117,34 @@ public class DataStore {
 	}
 
 
+	/**
+	 * Swipe-T9: looks up several digit sequences one after another, in its own background task.
+	 * It uses its own CancellationSignal, so it never cancels the live suggestion query.
+	 * The handler receives the sequences (in the given order) that produced at least one word.
+	 */
+	public static void getWordsForSequences(Consumer<java.util.LinkedHashMap<String, ArrayList<String>>> dataHandler, Language language, java.util.List<String> sequences, int maxWordsPerSequence, int maxWordsTotal) {
+		final ArrayList<String> copy = new ArrayList<>(sequences);
+		runInThread(() -> {
+			java.util.LinkedHashMap<String, ArrayList<String>> found = new java.util.LinkedHashMap<>();
+			int total = 0;
+			try {
+				CancellationSignal own = new CancellationSignal();
+				for (String sequence : copy) {
+					if (total >= maxWordsTotal) break;
+					ArrayList<String> data = words.getMany(own, language, sequence, true, null, false, 0, maxWordsPerSequence);
+					if (data != null && !data.isEmpty()) {
+						found.put(sequence, data);
+						total += data.size();
+					}
+				}
+			} catch (Exception e) {
+				Logger.e(LOG_TAG, "Swipe-T9 lookup failed: " + e.getMessage());
+			}
+			dataHandler.accept(found);
+		});
+	}
+
+
 	private static void getWordsSync(Consumer<ArrayList<String>> dataHandler, Language language, String sequence, boolean onlyExactSequence, String filter, boolean orderByLength, int minWords, int maxWords) {
 		try {
 			ArrayList<String> data = words.getMany(getWordsCancellationSignal, language, sequence, onlyExactSequence, filter, orderByLength, minWords, maxWords);

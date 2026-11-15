@@ -80,10 +80,15 @@ public class KeyPadScreen extends BaseScreenFragment {
             JSONObject e = entries.get(i);
             String time = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
                     .format(new Date(e.optLong("time", 0)));
-            String candidates = printWords(e.optJSONArray("dictionary"));
+            // v0.2.8: show what the keyboard really offered, not a lookup that never ran.
+            JSONArray offered = e.optJSONArray("decoderWords");
+            if (offered == null || offered.length() == 0) offered = e.optJSONArray("shown");
+            String words = printWords(offered);
+            String target = e.optString("target", "");
+            String targetInfo = target.isEmpty() ? "" : "\n   gemeint: " + target + (containsWord(e, target) ? "  ✓" : "  ✗");
             names[i] = time + "  " + e.optString("digits", "?") +
                     (e.optBoolean("recognized") ? "" : " (nicht erkannt)") +
-                    "  →  " + (candidates.isEmpty() ? "keine Wörter" : candidates);
+                    "\n   → " + (words.isEmpty() ? "keine Vorschläge" : words) + targetInfo;
         }
         new AlertDialog.Builder(requireContext()).setTitle("Wischprotokoll (" + entries.size() + "/100)")
                 .setItems(names, (dialog, which) -> showHistoryItem(entries.get(which)))
@@ -98,6 +103,62 @@ public class KeyPadScreen extends BaseScreenFragment {
                 .setNegativeButton("Abbrechen", null)
                 .setPositiveButton("Löschen", (dialog, which) -> SwipeT9History.clear(requireContext()))
                 .show();
+    }
+
+    private static boolean containsWord(JSONObject entry, String target) {
+        for (String key : new String[] {"decoderWords", "shown"}) {
+            JSONArray words = entry.optJSONArray(key);
+            if (words == null) continue;
+            for (int i = 0; i < words.length(); i++) {
+                if (target.equalsIgnoreCase(words.optString(i))) return true;
+            }
+        }
+        return false;
+    }
+
+    private static String printList(JSONArray items, int max) {
+        if (items == null || items.length() == 0) return "";
+        StringBuilder summary = new StringBuilder();
+        for (int i = 0; i < items.length() && i < max; i++) {
+            if (i > 0) summary.append(", ");
+            summary.append(items.optString(i));
+        }
+        return summary.toString();
+    }
+
+    private void askTarget(JSONObject entry) {
+        Context context = requireContext();
+        android.widget.EditText input = new android.widget.EditText(context);
+        input.setSingleLine(true);
+        input.setHint("z. B. Liebe");
+        input.setText(entry.optString("target", ""));
+        int pad = Math.round(20 * getResources().getDisplayMetrics().density);
+        LinearLayout box = new LinearLayout(context);
+        box.setPadding(pad, pad / 2, pad, 0);
+        box.addView(input, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        new AlertDialog.Builder(context).setTitle("Welches Wort war gemeint?")
+                .setMessage("Wird bei diesem Eintrag gespeichert. Ist „Wischen lernen“ an, merkt sich die Tastatur diese Bewegung für das Wort.")
+                .setView(box)
+                .setNegativeButton("Abbrechen", (d, w) -> showHistoryItem(entry))
+                .setPositiveButton("Speichern", (d, w) -> {
+                    String word = input.getText().toString().trim();
+                    long id = entry.optLong("id", -1);
+                    SwipeT9History.setTarget(context, id, word);
+                    learnTarget(context, entry, word);
+                    JSONObject updated = SwipeT9History.find(context, id);
+                    showHistoryItem(updated != null ? updated : entry);
+                }).show();
+    }
+
+    private static void learnTarget(Context context, JSONObject entry, String word) {
+        if (word.isEmpty()) return;
+        JSONArray path = entry.optJSONArray("path");
+        Language language = LanguageCollection.getLanguage(entry.optInt("language", -1));
+        if (path == null || path.length() < 4 || language == null) return;
+        float[] raw = new float[path.length()];
+        for (int i = 0; i < raw.length; i++) raw[i] = (float) path.optDouble(i);
+        SwipeT9Memory.remember(context, language.getLocale().getLanguage(),
+                word.toLowerCase(language.getLocale()), raw);
     }
 
     private static String printWords(JSONArray words) {
@@ -117,14 +178,20 @@ public class KeyPadScreen extends BaseScreenFragment {
         int pad = Math.round(16 * getResources().getDisplayMetrics().density);
         layout.setPadding(pad, pad, pad, pad);
         String suggestions = printWords(entry.optJSONArray("shown"));
-        String dictionary = printWords(entry.optJSONArray("dictionary"));
-        String details = "Tastenfolge: " + entry.optString("digits") +
+        String decoderWords = printList(entry.optJSONArray("decoderWords"), 30);
+        String readings = printList(entry.optJSONArray("readings"), 12);
+        String target = entry.optString("target", "");
+        String details = "Gemeint: " + (target.isEmpty() ? "– (unten „Gemeint war…“ antippen)"
+                        : target + (containsWord(entry, target) ? "  ✓ wurde angeboten" : "  ✗ nicht angeboten")) +
+                "\n\nRohe Tastenfolge: " + entry.optString("digits") +
+                "\nGewählte Lesart: " + (entry.optString("best").isEmpty() ? "–" : entry.optString("best")) +
+                "\nLesarten mit Wörtern: " + (readings.isEmpty() ? "keine" : readings) +
                 "\nBeginn: Taste " + entry.optInt("start", -1) +
                 "  ·  Ende: Taste " + entry.optInt("end", -1) +
                 "\nErkannt: " + (entry.optBoolean("recognized") ? "Ja" : "Nein (normaler Tastendruck)") +
                 "\nKreise/Zickzack: " + (entry.optString("loops").isEmpty() ? "kein Wiederholungsmuster erkannt" : entry.optString("loops")) +
-                "\nSichtbare Vorschläge: " + (suggestions.isEmpty() ? "keine / nicht erfasst" : suggestions) +
-                "\nKandidaten aus der Vorschlagssuche: " + (dictionary.isEmpty() ? "keine Treffer / nicht erfasst" : dictionary) +
+                "\nVorschlagsleiste: " + (suggestions.isEmpty() ? "nicht erfasst" : suggestions) +
+                "\nAlle Wisch-Wörter: " + (decoderWords.isEmpty() ? "keine" : decoderWords) +
                 "\n\nGrün = Anfang · Orange = Ende. Die Linie zeigt den aufgezeichneten Weg.";
         TextView text = new TextView(context);
         text.setText(details);
@@ -136,7 +203,7 @@ public class KeyPadScreen extends BaseScreenFragment {
         new AlertDialog.Builder(context).setTitle("Wischspur untersuchen")
                 .setView(layout)
                 .setNegativeButton("Zurück zur Liste", (dialog, which) -> showHistory())
-                .setPositiveButton("Schließen", null)
+                .setPositiveButton("Gemeint war…", (dialog, which) -> askTarget(entry))
                 .setNeutralButton("Details kopieren", (dialog, which) -> {
                     ClipboardManager manager = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
                     if (manager != null) manager.setPrimaryClip(ClipData.newPlainText("Swipe-T9 Diagnose", details));

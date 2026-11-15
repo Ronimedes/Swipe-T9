@@ -32,6 +32,11 @@ public class TraditionalT9 extends PremiumHandler {
 	private static final String LOG_TAG = "MAIN";
     private long pendingSwipeLogId = -1;
     private int pendingSwipeSequenceLength = -1;
+    // Swipe-T9 v0.2.8: more words from alternative readings of the same trace.
+    @NonNull private final Handler swipeLookupHandler = new Handler(Looper.getMainLooper());
+    private int swipeLookupToken = 0;
+    private ArrayList<String> swipeExtraWords = null;
+    private int swipeExtraSequenceLength = -1;
 
 	private Future<?> asyncInitThread;
 
@@ -346,6 +351,72 @@ public class TraditionalT9 extends PremiumHandler {
         if (mInputMode.getSequenceLength() < pendingSwipeSequenceLength) return;
         SwipeT9History.updateCandidates(this, pendingSwipeLogId, "shown", suggestions);
         pendingSwipeLogId = -1;
+    }
+
+    /**
+     * Swipe-T9 v0.2.8: the decoder gives several readings of one trace. All of them are looked
+     * up in the dictionary (in the background, without disturbing live suggestions). The best
+     * reading that has words is typed as usual; words from the other readings are appended to
+     * the suggestion bar, so the user can pick and the swipe memory can learn from that choice.
+     */
+    public void onSwipeT9Candidates(String raw, ArrayList<String> candidates, float[] drawing, long logId) {
+        if (raw == null || raw.isEmpty() || !isSwipeT9Allowed() || mLanguage == null) return;
+        String language = mLanguage.getLocale().getLanguage();
+        if (candidates == null || candidates.isEmpty()
+                || (drawing != null && SwipeT9Memory.match(this, language, drawing) != null)) {
+            onSwipeT9Sequence(raw, drawing, logId);
+            return;
+        }
+        final ArrayList<String> sequences = new ArrayList<>(candidates);
+        if (!sequences.contains(raw)) sequences.add(raw);
+        final int token = ++swipeLookupToken;
+        final io.github.sspanak.tt9.languages.Language lang = mLanguage;
+        DataStore.getWordsForSequences(
+            found -> swipeLookupHandler.post(() -> applySwipeT9Lookup(token, raw, found, drawing, logId)),
+            lang, sequences, 6, 30
+        );
+    }
+
+    private void applySwipeT9Lookup(int token, String raw, java.util.LinkedHashMap<String, ArrayList<String>> found, float[] drawing, long logId) {
+        if (token != swipeLookupToken || !isSwipeT9Allowed() || mInputMode == null) return;
+        String best = found.isEmpty() ? raw : found.keySet().iterator().next();
+        ArrayList<String> extras = new ArrayList<>();
+        ArrayList<String> readings = new ArrayList<>();
+        for (java.util.Map.Entry<String, ArrayList<String>> e : found.entrySet()) {
+            readings.add(e.getKey());
+            for (String w : e.getValue()) {
+                if (w != null && !extras.contains(w)) extras.add(w);
+            }
+        }
+        swipeExtraWords = extras.isEmpty() ? null : extras;
+        swipeExtraSequenceLength = mInputMode.getSequenceLength() + best.length();
+        if (logId != -1 && isSwipeT9DiagnosticAllowed()) {
+            SwipeT9History.updateDecoder(this, logId, best, readings, extras);
+        }
+        onSwipeT9Sequence(best, drawing, logId);
+    }
+
+    /** Appends the alternative swipe words to the live T9 suggestions of that swipe. */
+    public ArrayList<String> mergeSwipeT9Extras(ArrayList<String> suggestions) {
+        if (swipeExtraWords == null || mInputMode == null) return suggestions;
+        int length = mInputMode.getSequenceLength();
+        if (length == 0 || length > swipeExtraSequenceLength) {
+            swipeExtraWords = null;
+            return suggestions;
+        }
+        if (length != swipeExtraSequenceLength) return suggestions;
+        ArrayList<String> merged = new ArrayList<>(suggestions);
+        int textCase = mInputMode.getTextCaseRaw();
+        for (String word : swipeExtraWords) {
+            String shown = textCase == InputMode.CASE_CAPITALIZE || textCase == InputMode.CASE_UPPER
+                ? new Text(mLanguage, word).toTextCase(textCase) : word;
+            boolean exists = false;
+            for (String s : merged) {
+                if (s != null && s.equalsIgnoreCase(shown)) { exists = true; break; }
+            }
+            if (!exists) merged.add(shown);
+        }
+        return merged;
     }
 
     public boolean onSwipeT9Sequence(String digits, float[] drawing, long logId) {

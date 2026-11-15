@@ -144,4 +144,45 @@ public final class SwipeT9History {
             } catch (Exception ignored) { }
         }
     }
+
+    private interface EntryEditor { void edit(JSONObject entry) throws Exception; }
+
+    private static void editEntry(Context context, long id, EntryEditor editor) {
+        if (id == -1) return;
+        synchronized (LOCK) {
+            try {
+                JSONArray entries = read(context);
+                for (int i = 0; i < entries.length(); i++) {
+                    JSONObject entry = entries.optJSONObject(i);
+                    if (entry == null || entry.optLong("id", -1) != id) continue;
+                    editor.edit(entry);
+                    write(context, entries);
+                    break;
+                }
+            } catch (Exception ignored) { }
+        }
+    }
+
+    private static JSONArray toJson(ArrayList<String> items, int max) {
+        JSONArray array = new JSONArray();
+        if (items == null) return array;
+        for (int i = 0; i < items.size() && i < max; i++) {
+            String item = items.get(i);
+            if (item != null && item.length() <= 40) array.put(item);
+        }
+        return array;
+    }
+
+    /** Swipe-T9 v0.2.8: what the decoder chose, which readings had words, and all its words. */
+    public static void updateDecoder(Context context, long id, String best, ArrayList<String> readings, ArrayList<String> words) {
+        editEntry(context, id, entry -> entry
+                .put("best", best == null ? "" : best)
+                .put("readings", toJson(readings, 12))
+                .put("decoderWords", toJson(words, 30)));
+    }
+
+    /** Swipe-T9 v0.2.8: the word the user actually meant with this swipe. */
+    public static void setTarget(Context context, long id, String word) {
+        editEntry(context, id, entry -> entry.put("target", word == null ? "" : word.trim()));
+    }
 }

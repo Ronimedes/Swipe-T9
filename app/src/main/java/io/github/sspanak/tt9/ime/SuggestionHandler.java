@@ -190,8 +190,9 @@ abstract public class SuggestionHandler extends TypingHandler {
 			surroundingText = onAcceptPreviousSuggestion();
 		}
 
-		final ArrayList<String> suggestions = mInputMode.getSuggestions();
+		ArrayList<String> suggestions = mInputMode.getSuggestions();
         if (this instanceof TraditionalT9) {
+            suggestions = ((TraditionalT9) this).mergeSwipeT9Extras(suggestions);
             ((TraditionalT9) this).recordSwipeT9ShownSuggestions(suggestions);
         }
 		suggestionOps.set(suggestions, mInputMode.getRecommendedSuggestionIdx(), mInputMode.containsGeneratedSuggestions());

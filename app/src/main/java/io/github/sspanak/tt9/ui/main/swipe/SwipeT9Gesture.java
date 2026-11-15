@@ -19,7 +19,21 @@ public final class SwipeT9Gesture {
     private int horizontalDirection, horizontalTurns;
     private float horizontalLeg, zigzagTravel;
 
+    // Swipe-T9 v0.2.8: every sample of the whole gesture plus the key segments, for SwipeT9Decoder.
+    static final int MAX_GLOBAL = 2048;
+    static final int MAX_SEGMENTS = 32;
+    final float[] gX = new float[MAX_GLOBAL];
+    final float[] gY = new float[MAX_GLOBAL];
+    int gCount;
+    final int[] segDigit = new int[MAX_SEGMENTS];
+    final int[] segStart = new int[MAX_SEGMENTS];
+    final boolean[] segDoubled = new boolean[MAX_SEGMENTS];
+    int segCount;
+    float lastKeySize = 1f;
+
     public void reset() {
+        gCount = 0;
+        segCount = 0;
         sequence.setLength(0);
         detectedLoops.setLength(0);
         digit = -1;
@@ -45,6 +59,18 @@ public final class SwipeT9Gesture {
 
     public void add(int nextDigit, float x, float y, float keyWidth, float keyHeight) {
         if (nextDigit < 2 || nextDigit > 9 || sequence.length() >= 32) return;
+        if (digit != nextDigit && segCount < MAX_SEGMENTS) {
+            segDigit[segCount] = nextDigit;
+            segStart[segCount] = gCount;
+            segDoubled[segCount] = false;
+            segCount++;
+        }
+        if (gCount < MAX_GLOBAL) {
+            gX[gCount] = x;
+            gY[gCount] = y;
+            gCount++;
+        }
+        lastKeySize = Math.max(1f, Math.min(keyWidth, keyHeight));
         if (digit != nextDigit) {
             digit = nextDigit;
             sequence.append((char) ('0' + digit));
@@ -89,6 +115,7 @@ public final class SwipeT9Gesture {
                 && highY - lowY < .25f * keySize && highX - lowX >= .32f * keySize) {
             sequence.append((char) ('0' + digit));
             loopFound("Zickzack", x, y);
+            if (segCount > 0) segDoubled[segCount - 1] = true;
             loopRecognized = true;
         }
         if (!loopRecognized && sampleCount >= 7 && traveled >= 1.10f * keySize
@@ -101,14 +128,36 @@ public final class SwipeT9Gesture {
                     for (int j = i + 1; j < sampleCount; j++) {
                         path += Math.hypot(sampleX[j] - sampleX[j-1], sampleY[j] - sampleY[j-1]);
                     }
-                    if (path >= .85f * keySize) {
+                    // A real circle turns all the way round. A sharp V-shaped reversal
+                    // (e.g. the "3" in "Test") only turns about 180° and is not a double letter.
+                    if (path >= .85f * keySize && Math.abs(winding(i, sampleCount - 1)) >= 270f) {
                         sequence.append((char) ('0' + digit));
                         loopFound("Kreis", x, y);
+                        if (segCount > 0) segDoubled[segCount - 1] = true;
                         loopRecognized = true;
                         break;
                     }
                 }
             }
         }
+    }
+
+    /** Sum of signed direction changes along the samples, in degrees. */
+    private float winding(int from, int to) {
+        double total = 0;
+        double lastAngle = Double.NaN;
+        for (int j = from + 1; j <= to; j++) {
+            float dx = sampleX[j] - sampleX[j - 1], dy = sampleY[j] - sampleY[j - 1];
+            if (Math.hypot(dx, dy) < .02f * keySize) continue;
+            double angle = Math.toDegrees(Math.atan2(dy, dx));
+            if (!Double.isNaN(lastAngle)) {
+                double delta = angle - lastAngle;
+                while (delta > 180) delta -= 360;
+                while (delta < -180) delta += 360;
+                total += delta;
+            }
+            lastAngle = angle;
+        }
+        return (float) total;
     }
 }
