@@ -64,6 +64,7 @@ abstract public class SuggestionHandler extends TypingHandler {
 		}
 
 		suggestionOps.commitCurrent(false, true);
+		if (this instanceof TraditionalT9) ((TraditionalT9) this).recordSwipeT9Chosen(lastWord);
 		mInputMode.onAcceptSuggestion(lastWord, true);
 		final String[] surroundingText = autoCorrectSpace(
 			lastWord,
@@ -87,6 +88,7 @@ abstract public class SuggestionHandler extends TypingHandler {
 
 
 	public void onAcceptSuggestionManually(String word, int fromKey) {
+		if (this instanceof TraditionalT9) ((TraditionalT9) this).recordSwipeT9Chosen(word);
 		mInputMode.onAcceptSuggestion(word);
 		if (Clipboard.contains(word)) {
 			Clipboard.copy(this, word);
@@ -193,6 +195,9 @@ abstract public class SuggestionHandler extends TypingHandler {
 		ArrayList<String> suggestions = mInputMode.getSuggestions();
         if (this instanceof TraditionalT9) {
             suggestions = ((TraditionalT9) this).mergeSwipeT9Extras(suggestions);
+            if (InputModeKind.isPredictive(mInputMode)) {
+                suggestions = io.github.sspanak.tt9.ui.main.swipe.SwipeT9Blocklist.filter(this, suggestions);
+            }
             ((TraditionalT9) this).recordSwipeT9ShownSuggestions(suggestions);
         }
 		suggestionOps.set(suggestions, mInputMode.getRecommendedSuggestionIdx(), mInputMode.containsGeneratedSuggestions());

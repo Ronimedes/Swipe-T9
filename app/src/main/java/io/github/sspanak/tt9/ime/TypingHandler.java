@@ -35,6 +35,9 @@ import io.github.sspanak.tt9.languages.LanguageKind;
 import io.github.sspanak.tt9.languages.NaturalLanguage;
 import io.github.sspanak.tt9.preferences.settings.SettingsStore;
 import io.github.sspanak.tt9.ui.main.swipe.SwipeT9Memory;
+import io.github.sspanak.tt9.ui.main.swipe.SwipeT9Blocklist;
+import io.github.sspanak.tt9.ui.main.keys.SwipeT9WordMenu;
+import io.github.sspanak.tt9.db.DataStore;
 import io.github.sspanak.tt9.util.Text;
 import io.github.sspanak.tt9.util.chars.Characters;
 
@@ -75,7 +78,13 @@ public abstract class TypingHandler extends KeyPadHandler {
 		if (accepted && drawing != null && language != null && !shouldBeOff()) {
 			SwipeT9Memory.remember(this, language, selected, drawing);
 		}
+		if (accepted) {
+			onSwipeT9Selected(selected, drawing != null && language != null && SwipeT9Memory.isEnabled(this));
+		}
 	}
+
+	/** v0.2.9: overridden to note in the swipe log which word was tapped and whether it was learned. */
+	protected void onSwipeT9Selected(String word, boolean learned) {}
 
 	// input
 	@NonNull protected ArrayList<Integer> allowedInputModes = new ArrayList<>();
@@ -127,12 +136,34 @@ public abstract class TypingHandler extends KeyPadHandler {
 
 	private void onSwipeT9SuggestionHold() {
 		CmdAddWord addWord = new CmdAddWord();
-		if (settings.isMainLayoutNumpad() && mLanguage != null
-			&& "de".equals(mLanguage.getLocale().getLanguage()) && addWord.isAvailable(getFinalContext())) {
-			addWord.run(getFinalContext());
-		} else {
-			onOK(KeyEvent.KEYCODE_UNKNOWN);
+		final boolean german = settings.isMainLayoutNumpad() && mLanguage != null
+			&& "de".equals(mLanguage.getLocale().getLanguage());
+		final String word = suggestionOps.getCurrent();
+		final String trimmed = word == null ? "" : word.trim();
+		final boolean canHide = german && InputModeKind.isPredictive(mInputMode)
+			&& trimmed.length() >= 2 && Character.isLetter(trimmed.codePointAt(0));
+		final boolean canAdd = german && addWord.isAvailable(getFinalContext());
+
+		if ((canHide || canAdd) && mainView != null && mainView.getView() != null) {
+			final Language language = mLanguage;
+			Runnable hide = !canHide ? null : () -> {
+				SwipeT9Blocklist.block(this, trimmed);
+				DataStore.deleteCustomWord(() -> {}, language, trimmed);
+				if (!shouldBeOff()) getSuggestions(0, null, null);
+			};
+			Runnable add = !canAdd ? null : () -> {
+				if (addWord.isAvailable(getFinalContext())) addWord.run(getFinalContext());
+			};
+			if (SwipeT9WordMenu.show(mainView.getView(), trimmed.isEmpty() ? "?" : trimmed,
+				settings.getKeyboardTextColor(), settings.getKeyboardBackground(), hide, add)) {
+				return;
+			}
+			if (canAdd) {
+				addWord.run(getFinalContext());
+				return;
+			}
 		}
+		onOK(KeyEvent.KEYCODE_UNKNOWN);
 	}
 
 	public boolean shouldBeOff() {

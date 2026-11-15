@@ -32,6 +32,8 @@ public class TraditionalT9 extends PremiumHandler {
 	private static final String LOG_TAG = "MAIN";
     private long pendingSwipeLogId = -1;
     private int pendingSwipeSequenceLength = -1;
+    // v0.2.9: which history entry waits for the word the user finally takes.
+    private long chosenSwipeLogId = -1;
     // Swipe-T9 v0.2.8: more words from alternative readings of the same trace.
     @NonNull private final Handler swipeLookupHandler = new Handler(Looper.getMainLooper());
     private int swipeLookupToken = 0;
@@ -96,6 +98,7 @@ public class TraditionalT9 extends PremiumHandler {
 	public void onFinishInputView(boolean finishingInput) {
 		super.onFinishInputView(finishingInput);
 		io.github.sspanak.tt9.ui.main.keys.SwipeT9SymbolPopup.dismiss();
+		io.github.sspanak.tt9.ui.main.keys.SwipeT9WordMenu.dismiss();
 		onFinishTyping(finishingInput);
 	}
 
@@ -346,6 +349,30 @@ public class TraditionalT9 extends PremiumHandler {
                 && (info == null || (info.imeOptions & EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) == 0);
     }
 
+    /** v0.2.9: remembers in the swipe log which word the user accepted after a swipe. */
+    public void recordSwipeT9Chosen(String word) {
+        if (chosenSwipeLogId < 0) return;
+        long id = chosenSwipeLogId;
+        chosenSwipeLogId = -1;
+        if (word == null || word.trim().isEmpty()) return;
+        SwipeT9History.setChosen(this, id, word.trim(), false);
+        lastChosenSwipeLogId = id;
+        lastChosenSwipeTime = System.currentTimeMillis();
+    }
+
+    private long lastChosenSwipeLogId = -1;
+    private long lastChosenSwipeTime = 0;
+
+    @Override
+    protected void onSwipeT9Selected(String word, boolean learned) {
+        boolean fresh = System.currentTimeMillis() - lastChosenSwipeTime < 2000;
+        long id = lastChosenSwipeLogId >= 0 && fresh ? lastChosenSwipeLogId : chosenSwipeLogId;
+        lastChosenSwipeLogId = -1;
+        chosenSwipeLogId = -1;
+        if (id < 0 || word == null || word.trim().isEmpty()) return;
+        SwipeT9History.setChosen(this, id, word.trim(), learned);
+    }
+
     public void recordSwipeT9ShownSuggestions(ArrayList<String> suggestions) {
         if (pendingSwipeLogId < 0 || mInputMode == null) return;
         if (mInputMode.getSequenceLength() < pendingSwipeSequenceLength) return;
@@ -373,20 +400,31 @@ public class TraditionalT9 extends PremiumHandler {
         final io.github.sspanak.tt9.languages.Language lang = mLanguage;
         DataStore.getWordsForSequences(
             found -> swipeLookupHandler.post(() -> applySwipeT9Lookup(token, raw, found, drawing, logId)),
-            lang, sequences, 6, 30
+            lang, sequences, 6, 40
         );
     }
 
     private void applySwipeT9Lookup(int token, String raw, java.util.LinkedHashMap<String, ArrayList<String>> found, float[] drawing, long logId) {
         if (token != swipeLookupToken || !isSwipeT9Allowed() || mInputMode == null) return;
-        String best = found.isEmpty() ? raw : found.keySet().iterator().next();
+        String best = raw;
+        for (java.util.Map.Entry<String, ArrayList<String>> e : found.entrySet()) {
+            boolean usable = false;
+            for (String w : e.getValue()) {
+                if (w != null && !io.github.sspanak.tt9.ui.main.swipe.SwipeT9Blocklist.isBlocked(this, w)) { usable = true; break; }
+            }
+            if (usable) { best = e.getKey(); break; }
+        }
         ArrayList<String> extras = new ArrayList<>();
         ArrayList<String> readings = new ArrayList<>();
         for (java.util.Map.Entry<String, ArrayList<String>> e : found.entrySet()) {
             readings.add(e.getKey());
+            boolean usable = false;
             for (String w : e.getValue()) {
-                if (w != null && !extras.contains(w)) extras.add(w);
+                if (w == null || io.github.sspanak.tt9.ui.main.swipe.SwipeT9Blocklist.isBlocked(this, w)) continue;
+                usable = true;
+                if (!extras.contains(w)) extras.add(w);
             }
+            if (!usable) continue;
         }
         swipeExtraWords = extras.isEmpty() ? null : extras;
         swipeExtraSequenceLength = mInputMode.getSequenceLength() + best.length();
@@ -423,8 +461,10 @@ public class TraditionalT9 extends PremiumHandler {
 		if (digits == null || digits.isEmpty() || digits.length() > 32 || shouldBeOff()
 			|| isFnPanelVisible() || !InputModeKind.isPredictive(mInputMode)) return false;
         pendingSwipeLogId = -1;
+        chosenSwipeLogId = -1;
         if (logId != -1 && isSwipeT9DiagnosticAllowed()) {
             pendingSwipeLogId = logId;
+            chosenSwipeLogId = logId;
             pendingSwipeSequenceLength = mInputMode.getSequenceLength() + digits.length();
             // Do not launch a second getWords() request here. DataStore cancels
             // concurrent dictionary searches, which would break live suggestions.
@@ -443,7 +483,9 @@ public class TraditionalT9 extends PremiumHandler {
                     ArrayList<String> learnedChoices = new ArrayList<>();
                     learnedChoices.add(chosen);
                     SwipeT9History.updateCandidates(this, logId, "shown", learnedChoices);
+                    SwipeT9History.setChosen(this, logId, chosen, true);
                     pendingSwipeLogId = -1;
+                    chosenSwipeLogId = -1;
                 }
 				markSwipeT9Entered();
 				return true;

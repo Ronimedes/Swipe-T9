@@ -36,6 +36,11 @@
             android:title="@string/swipe_t9_history"
             android:summary="@string/swipe_t9_history_summary" />
 
+        <Preference
+            android:key="swipe_t9_blocklist"
+            android:title="Ausgeblendete Wörter"
+            android:summary="Wörter, die nie vorgeschlagen werden. Antippen zum Wiederherstellen oder Hinzufügen." />
+
 		<Preference
 			android:key="swipe_t9_clear_learning"
 			android:title="@string/swipe_t9_clear_learning"

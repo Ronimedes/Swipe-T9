@@ -185,4 +185,9 @@ public final class SwipeT9History {
     public static void setTarget(Context context, long id, String word) {
         editEntry(context, id, entry -> entry.put("target", word == null ? "" : word.trim()));
     }
+
+    /** v0.2.9: the word the user took after this swipe. */
+    public static void setChosen(Context context, long id, String word, boolean learned) {
+        editEntry(context, id, entry -> entry.put("chosen", word == null ? "" : word).put("learned", learned));
+    }
 }

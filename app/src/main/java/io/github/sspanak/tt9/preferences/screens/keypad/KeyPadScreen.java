@@ -56,6 +56,11 @@ public class KeyPadScreen extends BaseScreenFragment {
             showHistory();
             return true;
         });
+		Preference blocklist = findPreference("swipe_t9_blocklist");
+		if (blocklist != null) blocklist.setOnPreferenceClickListener(p -> {
+			showBlocklist();
+			return true;
+		});
 		Preference clear = findPreference("swipe_t9_clear_learning");
 		if (clear != null) clear.setOnPreferenceClickListener(p -> {
 			SwipeT9Memory.clear(requireContext());
@@ -65,6 +70,48 @@ public class KeyPadScreen extends BaseScreenFragment {
 		if (dropdown != null && activity != null) dropdown.populate(activity.getSettings()).preview();
 
 	}
+
+    /** v0.2.9: hidden words. Tap one to bring it back; add new ones by hand. */
+    private void showBlocklist() {
+        Context context = requireContext();
+        java.util.List<String> words = io.github.sspanak.tt9.ui.main.swipe.SwipeT9Blocklist.getAll(context);
+        AlertDialog.Builder builder = new AlertDialog.Builder(context)
+                .setTitle("Ausgeblendete Wörter (" + words.size() + ")")
+                .setNeutralButton("Wort ausblenden…", (d, w) -> askBlockWord())
+                .setPositiveButton("Schließen", null);
+        if (words.isEmpty()) {
+            builder.setMessage("Noch keine. Halte in der Vorschlagsleiste ein Wort gedrückt und wähle „Ausblenden“.");
+        } else {
+            CharSequence[] items = words.toArray(new CharSequence[0]);
+            builder.setItems(items, (d, which) -> new AlertDialog.Builder(context)
+                    .setTitle("„" + words.get(which) + "“ wieder vorschlagen?")
+                    .setNegativeButton("Nein", (x, y) -> showBlocklist())
+                    .setPositiveButton("Wiederherstellen", (x, y) -> {
+                        io.github.sspanak.tt9.ui.main.swipe.SwipeT9Blocklist.unblock(context, words.get(which));
+                        showBlocklist();
+                    }).show());
+        }
+        builder.show();
+    }
+
+    private void askBlockWord() {
+        Context context = requireContext();
+        android.widget.EditText input = new android.widget.EditText(context);
+        input.setSingleLine(true);
+        input.setHint("z. B. VDSt");
+        int pad = Math.round(20 * getResources().getDisplayMetrics().density);
+        LinearLayout box = new LinearLayout(context);
+        box.setPadding(pad, pad / 2, pad, 0);
+        box.addView(input, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        new AlertDialog.Builder(context).setTitle("Wort ausblenden")
+                .setView(box)
+                .setNegativeButton("Abbrechen", (d, w) -> showBlocklist())
+                .setPositiveButton("Ausblenden", (d, w) -> {
+                    String word = input.getText().toString().trim();
+                    if (!word.isEmpty()) io.github.sspanak.tt9.ui.main.swipe.SwipeT9Blocklist.block(context, word);
+                    showBlocklist();
+                }).show();
+    }
 
     /** Display entries in reverse chronological order, never the surrounding typed text. */
     private void showHistory() {
@@ -85,10 +132,12 @@ public class KeyPadScreen extends BaseScreenFragment {
             if (offered == null || offered.length() == 0) offered = e.optJSONArray("shown");
             String words = printWords(offered);
             String target = e.optString("target", "");
+            String chosen = e.optString("chosen", "");
+            String chosenInfo = chosen.isEmpty() ? "" : "\n   gewählt: " + chosen + (e.optBoolean("learned") ? "  ✓ gelernt" : "");
             String targetInfo = target.isEmpty() ? "" : "\n   gemeint: " + target + (containsWord(e, target) ? "  ✓" : "  ✗");
             names[i] = time + "  " + e.optString("digits", "?") +
                     (e.optBoolean("recognized") ? "" : " (nicht erkannt)") +
-                    "\n   → " + (words.isEmpty() ? "keine Vorschläge" : words) + targetInfo;
+                    "\n   → " + (words.isEmpty() ? "keine Vorschläge" : words) + chosenInfo + targetInfo;
         }
         new AlertDialog.Builder(requireContext()).setTitle("Wischprotokoll (" + entries.size() + "/100)")
                 .setItems(names, (dialog, which) -> showHistoryItem(entries.get(which)))
@@ -181,7 +230,9 @@ public class KeyPadScreen extends BaseScreenFragment {
         String decoderWords = printList(entry.optJSONArray("decoderWords"), 30);
         String readings = printList(entry.optJSONArray("readings"), 12);
         String target = entry.optString("target", "");
-        String details = "Gemeint: " + (target.isEmpty() ? "– (unten „Gemeint war…“ antippen)"
+        String chosenWord = entry.optString("chosen", "");
+        String details = "Gewählt: " + (chosenWord.isEmpty() ? "– (nichts übernommen)" : chosenWord + (entry.optBoolean("learned") ? "  ✓ gelernt" : "")) +
+                "\nGemeint: " + (target.isEmpty() ? "– (unten „Gemeint war…“ antippen)"
                         : target + (containsWord(entry, target) ? "  ✓ wurde angeboten" : "  ✗ nicht angeboten")) +
                 "\n\nRohe Tastenfolge: " + entry.optString("digits") +
                 "\nGewählte Lesart: " + (entry.optString("best").isEmpty() ? "–" : entry.optString("best")) +

@@ -19,7 +19,8 @@ class Wrapper {
 	static def wordToDigitSequence(Locale locale, String word, HashMap<String, String> sounds, boolean isTranscribed) {
 		def sequence = new StringBuilder()
 
-		final String normalizedWord = isTranscribed ? word : word.toUpperCase(locale)
+		// Swipe-T9: "ß".toUpperCase() is "SS", which would put ß on 77 instead of 7. Use the capital ẞ.
+		final String normalizedWord = isTranscribed ? word : word.replace("ß", "ẞ").toUpperCase(locale)
 		String currentSound = ""
 
 		for (int i = 0, end = normalizedWord.length() - 1; i <= end; i++) {
@@ -58,7 +59,9 @@ class Wrapper {
 	static def getLanguageHash(File definitionFile, File dictionaryFile) {
 		def definitionHash = definitionFile != null && definitionFile.exists() ? sha256(definitionFile.path) : ""
 		def dictionaryHash = dictionaryFile != null && dictionaryFile.exists() ? sha256(dictionaryFile.path) : ""
-		return definitionHash + dictionaryHash
+		// Swipe-T9: marker so phones re-import German after the ß fix.
+		def marker = definitionFile != null && definitionFile.name == "German.yml" ? "-sz7" : ""
+		return definitionHash + dictionaryHash + marker
 	}
 
 

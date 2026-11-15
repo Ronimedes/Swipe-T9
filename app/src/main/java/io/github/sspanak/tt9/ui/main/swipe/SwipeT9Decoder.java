@@ -19,7 +19,8 @@ import java.util.LinkedHashSet;
  * and without the doubtful keys; the dictionary then tells which of them are words.
  */
 public final class SwipeT9Decoder {
-	public static final int MAX_CANDIDATES = 40;
+	public static final int MAX_CANDIDATES = 100;
+	private static final float DOUBLE_COST = 0.45f;
 	private static final int MAX_OPTIONAL = 12;
 
 	private SwipeT9Decoder() {}
@@ -72,6 +73,12 @@ public final class SwipeT9Decoder {
 			if (merged.length() >= 2) choices.add(new Choice(merged, cost));
 			String repeated = build(segments, dropped, false);
 			if (!repeated.equals(merged) && repeated.length() >= 2) choices.add(new Choice(repeated, cost + 0.35f));
+			// v0.2.9: double letters without a loop (alles, essen, Mann): double one meant key.
+			for (int d = 0; d < segments.length; d++) {
+				if (dropped[d] || segments[d].doubled || segments[d].strength < 0.5f) continue;
+				String doubled = buildWithDouble(segments, dropped, d);
+				if (doubled.length() >= 3) choices.add(new Choice(doubled, cost + DOUBLE_COST));
+			}
 		}
 
 		choices.sort(Comparator.comparingDouble(c -> c.cost));
@@ -102,6 +109,23 @@ public final class SwipeT9Decoder {
 			if (collapseRepeats && s.digit == last && !s.doubled) continue;
 			sb.append((char) ('0' + s.digit));
 			if (s.doubled) sb.append((char) ('0' + s.digit));
+			last = s.digit;
+			if (sb.length() >= 32) break;
+		}
+		return sb.toString();
+	}
+
+
+	@NonNull
+	private static String buildWithDouble(@NonNull Segment[] segments, @NonNull boolean[] dropped, int doubleAt) {
+		StringBuilder sb = new StringBuilder();
+		int last = -1;
+		for (int i = 0; i < segments.length; i++) {
+			if (dropped[i]) continue;
+			Segment s = segments[i];
+			if (s.digit == last && !s.doubled && i != doubleAt) continue;
+			sb.append((char) ('0' + s.digit));
+			if (s.doubled || i == doubleAt) sb.append((char) ('0' + s.digit));
 			last = s.digit;
 			if (sb.length() >= 32) break;
 		}

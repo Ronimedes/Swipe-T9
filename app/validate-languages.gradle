@@ -252,7 +252,7 @@ ext.parseLanguageDefintion = { File languageFile, String dictionariesDir, String
 
 	if (!hasSounds && locale != null) {
 		layoutSounds.forEach { sound, sequence ->
-			sounds.put(sound.toUpperCase(locale), sequence)
+			sounds.put(sound == "ß" ? "ẞ" : sound.toUpperCase(locale), sequence)
 		}
 	}
 
