@@ -1,0 +1,738 @@
+diff --git a/app/build.gradle b/app/build.gradle
+index d1e1c34..0511b8b 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -162,8 +162,8 @@ android {
+ 		buildFeatures.buildConfig = true
+ 		minSdk = 24
+ 		targetSdk = 37
+-		versionCode = 20005
+-		versionName = "0.2.5"
++		versionCode = 20006
++		versionName = "0.2.6"
+ 
+ 		buildConfigField 'String', 'DICTIONARY_EXTENSION', "\"${DICTIONARY_OUTPUT_EXTENSION}\""
+ 		buildConfigField 'String', 'DOCS_DIR', "\"${DOCS_DIR_NAME}\""
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ime/SuggestionHandler.java b/app/src/main/java/io/github/sspanak/tt9/ime/SuggestionHandler.java
+index 40ac2b7..e31aeea 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ime/SuggestionHandler.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ime/SuggestionHandler.java
+@@ -191,6 +191,9 @@ abstract public class SuggestionHandler extends TypingHandler {
+ 		}
+ 
+ 		final ArrayList<String> suggestions = mInputMode.getSuggestions();
++        if (this instanceof TraditionalT9) {
++            ((TraditionalT9) this).recordSwipeT9ShownSuggestions(suggestions);
++        }
+ 		suggestionOps.set(suggestions, mInputMode.getRecommendedSuggestionIdx(), mInputMode.containsGeneratedSuggestions());
+ 
+ 		// either accept the first one automatically (when switching from punctuation to text
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ime/TraditionalT9.java b/app/src/main/java/io/github/sspanak/tt9/ime/TraditionalT9.java
+index 81237af..6fa82fe 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ime/TraditionalT9.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ime/TraditionalT9.java
+@@ -19,6 +19,8 @@ import io.github.sspanak.tt9.languages.LanguageCollection;
+ import io.github.sspanak.tt9.preferences.settings.SettingsStore;
+ import io.github.sspanak.tt9.ui.UI;
+ import io.github.sspanak.tt9.ui.main.swipe.SwipeT9Memory;
++import io.github.sspanak.tt9.ui.main.swipe.SwipeT9History;
++import java.util.ArrayList;
+ import io.github.sspanak.tt9.util.Text;
+ import io.github.sspanak.tt9.ime.modes.InputMode;
+ import io.github.sspanak.tt9.util.Logger;
+@@ -28,6 +30,8 @@ import io.github.sspanak.tt9.util.sys.SystemSettings;
+ 
+ public class TraditionalT9 extends PremiumHandler {
+ 	private static final String LOG_TAG = "MAIN";
++    private long pendingSwipeLogId = -1;
++    private int pendingSwipeSequenceLength = -1;
+ 
+ 	private Future<?> asyncInitThread;
+ 
+@@ -326,9 +330,34 @@ public class TraditionalT9 extends PremiumHandler {
+ 		return onSwipeT9Sequence(digits, null);
+ 	}
+ 
+-	public boolean onSwipeT9Sequence(String digits, float[] drawing) {
++    public boolean onSwipeT9Sequence(String digits, float[] drawing) {
++        return onSwipeT9Sequence(digits, drawing, -1);
++    }
++
++    public boolean isSwipeT9DiagnosticAllowed() {
++        EditorInfo info = getCurrentInputEditorInfo();
++        return isSwipeT9Allowed() && (inputType == null || !inputType.isPassword())
++                && (info == null || (info.imeOptions & EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) == 0);
++    }
++
++    public void recordSwipeT9ShownSuggestions(ArrayList<String> suggestions) {
++        if (pendingSwipeLogId < 0 || mInputMode == null) return;
++        if (mInputMode.getSequenceLength() < pendingSwipeSequenceLength) return;
++        SwipeT9History.updateCandidates(this, pendingSwipeLogId, "shown", suggestions);
++        pendingSwipeLogId = -1;
++    }
++
++    public boolean onSwipeT9Sequence(String digits, float[] drawing, long logId) {
+ 		if (digits == null || digits.isEmpty() || digits.length() > 32 || shouldBeOff()
+ 			|| isFnPanelVisible() || !InputModeKind.isPredictive(mInputMode)) return false;
++        pendingSwipeLogId = -1;
++        if (logId != -1 && isSwipeT9DiagnosticAllowed()) {
++            pendingSwipeLogId = logId;
++            pendingSwipeSequenceLength = mInputMode.getSequenceLength() + digits.length();
++            // Do not launch a second getWords() request here. DataStore cancels
++            // concurrent dictionary searches, which would break live suggestions.
++            // The live suggestions are saved by recordSwipeT9ShownSuggestions().
++        }
+ 		// Use confirmed, local prototypes only when at least three selections agree.
+ 		// If there is any doubt, preserve the original T9 dictionary behavior.
+ 		String language = mLanguage == null ? null : mLanguage.getLocale().getLanguage();
+@@ -338,6 +367,12 @@ public class TraditionalT9 extends PremiumHandler {
+ 			String chosen = textCase == InputMode.CASE_CAPITALIZE || textCase == InputMode.CASE_UPPER
+ 				? new Text(mLanguage, learned).toTextCase(textCase) : learned;
+ 			if (onText(chosen, false)) {
++                if (logId != -1) {
++                    ArrayList<String> learnedChoices = new ArrayList<>();
++                    learnedChoices.add(chosen);
++                    SwipeT9History.updateCandidates(this, logId, "shown", learnedChoices);
++                    pendingSwipeLogId = -1;
++                }
+ 				markSwipeT9Entered();
+ 				return true;
+ 			}
+@@ -357,7 +392,7 @@ public class TraditionalT9 extends PremiumHandler {
+ 
+ 	/** Swipe is only active in normal predictive text fields, never in number/password modes. */
+ 	public boolean isSwipeT9Allowed() {
+-		return !shouldBeOff() && !isFnPanelVisible() && InputModeKind.isPredictive(mInputMode)
++		return !shouldBeOff() && !isFnPanelVisible() && (inputType == null || !inputType.isPassword()) && InputModeKind.isPredictive(mInputMode)
+ 			&& settings.isMainLayoutNumpad() && !isTouchExplorationEnabled();
+ 	}
+ 
+diff --git a/app/src/main/java/io/github/sspanak/tt9/preferences/screens/keypad/KeyPadScreen.java b/app/src/main/java/io/github/sspanak/tt9/preferences/screens/keypad/KeyPadScreen.java
+index 9057da1..bc6b43f 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/preferences/screens/keypad/KeyPadScreen.java
++++ b/app/src/main/java/io/github/sspanak/tt9/preferences/screens/keypad/KeyPadScreen.java
+@@ -1,11 +1,33 @@
+ package io.github.sspanak.tt9.preferences.screens.keypad;
+ 
+ import androidx.annotation.Nullable;
++import android.app.AlertDialog;
++import android.os.Handler;
++import android.os.Looper;
++import io.github.sspanak.tt9.db.DataStore;
++import io.github.sspanak.tt9.languages.Language;
++import io.github.sspanak.tt9.languages.LanguageCollection;
++import android.content.ClipData;
++import android.content.ClipboardManager;
++import android.content.Context;
++import android.graphics.Canvas;
++import android.graphics.Color;
++import android.graphics.Paint;
++import android.graphics.Path;
++import android.view.View;
++import android.widget.LinearLayout;
++import android.widget.TextView;
++import org.json.JSONObject;
++import org.json.JSONArray;
++import java.text.DateFormat;
++import java.util.ArrayList;
++import java.util.Date;
+ import androidx.preference.Preference;
+ import androidx.preference.PreferenceCategory;
+ 
+ import io.github.sspanak.tt9.R;
+ import io.github.sspanak.tt9.ui.main.swipe.SwipeT9Memory;
++import io.github.sspanak.tt9.ui.main.swipe.SwipeT9History;
+ import io.github.sspanak.tt9.preferences.PreferencesActivity;
+ import io.github.sspanak.tt9.preferences.custom.EnhancedDropDownPreference;
+ import io.github.sspanak.tt9.preferences.screens.BaseScreenFragment;
+@@ -28,7 +50,12 @@ public class KeyPadScreen extends BaseScreenFragment {
+ 		resetFontSize(true);
+ 	}
+ 
+-	private void createTypingSection() {
++    private void createTypingSection() {
++        Preference history = findPreference("swipe_t9_history");
++        if (history != null) history.setOnPreferenceClickListener(p -> {
++            showHistory();
++            return true;
++        });
+ 		Preference clear = findPreference("swipe_t9_clear_learning");
+ 		if (clear != null) clear.setOnPreferenceClickListener(p -> {
+ 			SwipeT9Memory.clear(requireContext());
+@@ -39,6 +66,126 @@ public class KeyPadScreen extends BaseScreenFragment {
+ 
+ 	}
+ 
++    /** Display entries in reverse chronological order, never the surrounding typed text. */
++    private void showHistory() {
++        ArrayList<JSONObject> entries = SwipeT9History.list(requireContext());
++        if (entries.isEmpty()) {
++            new AlertDialog.Builder(requireContext()).setTitle("Wischprotokoll")
++                    .setMessage("Noch keine Wischbewegungen aufgezeichnet. Aktiviere zuerst 'Wischprotokoll aufzeichnen'.")
++                    .setPositiveButton("OK", null).show();
++            return;
++        }
++        CharSequence[] names = new CharSequence[entries.size()];
++        for (int i = 0; i < entries.size(); i++) {
++            JSONObject e = entries.get(i);
++            String time = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
++                    .format(new Date(e.optLong("time", 0)));
++            String candidates = printWords(e.optJSONArray("dictionary"));
++            names[i] = time + "  " + e.optString("digits", "?") +
++                    (e.optBoolean("recognized") ? "" : " (nicht erkannt)") +
++                    "  →  " + (candidates.isEmpty() ? "keine Wörter" : candidates);
++        }
++        new AlertDialog.Builder(requireContext()).setTitle("Wischprotokoll (" + entries.size() + "/100)")
++                .setItems(names, (dialog, which) -> showHistoryItem(entries.get(which)))
++                .setNegativeButton("Schließen", null)
++                .setNeutralButton("Alle löschen", (dialog, which) -> confirmClearHistory())
++                .show();
++    }
++
++    private void confirmClearHistory() {
++        new AlertDialog.Builder(requireContext()).setTitle("Alle Wischspuren löschen?")
++                .setMessage("Entfernt die letzten 100 Protokolleinträge. Gelernte Wörter bleiben erhalten.")
++                .setNegativeButton("Abbrechen", null)
++                .setPositiveButton("Löschen", (dialog, which) -> SwipeT9History.clear(requireContext()))
++                .show();
++    }
++
++    private static String printWords(JSONArray words) {
++        if (words == null || words.length() == 0) return "";
++        StringBuilder summary = new StringBuilder();
++        for (int i = 0; i < words.length() && i < 6; i++) {
++            if (i > 0) summary.append(", ");
++            summary.append(words.optString(i));
++        }
++        return summary.toString();
++    }
++
++    private void showHistoryItem(JSONObject entry) {
++        Context context = requireContext();
++        LinearLayout layout = new LinearLayout(context);
++        layout.setOrientation(LinearLayout.VERTICAL);
++        int pad = Math.round(16 * getResources().getDisplayMetrics().density);
++        layout.setPadding(pad, pad, pad, pad);
++        String suggestions = printWords(entry.optJSONArray("shown"));
++        String dictionary = printWords(entry.optJSONArray("dictionary"));
++        String details = "Tastenfolge: " + entry.optString("digits") +
++                "\nBeginn: Taste " + entry.optInt("start", -1) +
++                "  ·  Ende: Taste " + entry.optInt("end", -1) +
++                "\nErkannt: " + (entry.optBoolean("recognized") ? "Ja" : "Nein (normaler Tastendruck)") +
++                "\nKreise/Zickzack: " + (entry.optString("loops").isEmpty() ? "kein Wiederholungsmuster erkannt" : entry.optString("loops")) +
++                "\nSichtbare Vorschläge: " + (suggestions.isEmpty() ? "keine / nicht erfasst" : suggestions) +
++                "\nKandidaten aus der Vorschlagssuche: " + (dictionary.isEmpty() ? "keine Treffer / nicht erfasst" : dictionary) +
++                "\n\nGrün = Anfang · Orange = Ende. Die Linie zeigt den aufgezeichneten Weg.";
++        TextView text = new TextView(context);
++        text.setText(details);
++        text.setTextSize(14);
++        layout.addView(text);
++        View sketch = new SwipePreview(context, entry.optJSONArray("path"));
++        layout.addView(sketch, new LinearLayout.LayoutParams(
++                LinearLayout.LayoutParams.MATCH_PARENT, Math.round(210 * getResources().getDisplayMetrics().density)));
++        new AlertDialog.Builder(context).setTitle("Wischspur untersuchen")
++                .setView(layout)
++                .setNegativeButton("Zurück zur Liste", (dialog, which) -> showHistory())
++                .setPositiveButton("Schließen", null)
++                .setNeutralButton("Details kopieren", (dialog, which) -> {
++                    ClipboardManager manager = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
++                    if (manager != null) manager.setPrimaryClip(ClipData.newPlainText("Swipe-T9 Diagnose", details));
++                }).show();
++    }
++
++    /** Read-only miniature route drawing from normalized, locally stored coordinates. */
++    private static final class SwipePreview extends View {
++        private final JSONArray points;
++        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
++        SwipePreview(Context context, JSONArray points) {
++            super(context);
++            this.points = points;
++        }
++        @Override protected void onDraw(Canvas canvas) {
++            super.onDraw(canvas);
++            canvas.drawColor(Color.rgb(28, 35, 43));
++            if (points == null || points.length() < 4) return;
++            float minX = 2f, minY = 2f, maxX = -1f, maxY = -1f;
++            for (int i=0; i+1<points.length(); i+=2) {
++                float x = (float) points.optDouble(i), y = (float) points.optDouble(i+1);
++                minX = Math.min(minX, x); minY = Math.min(minY, y);
++                maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
++            }
++            float margin = 26 * getResources().getDisplayMetrics().density;
++            float scale = Math.min((getWidth()-2*margin)/Math.max(.05f, maxX-minX),
++                    (getHeight()-2*margin)/Math.max(.05f, maxY-minY));
++            if (scale <= 0 || Float.isNaN(scale)) return;
++            float offsetX = (getWidth() - (maxX-minX)*scale) / 2;
++            float offsetY = (getHeight() - (maxY-minY)*scale) / 2;
++            Path line = new Path();
++            for (int i=0; i+1<points.length(); i+=2) {
++                float x = offsetX + ((float)points.optDouble(i)-minX)*scale;
++                float y = offsetY + ((float)points.optDouble(i+1)-minY)*scale;
++                if (i == 0) line.moveTo(x,y); else line.lineTo(x,y);
++            }
++            paint.setColor(Color.rgb(0,195,216)); paint.setStyle(Paint.Style.STROKE);
++            paint.setStrokeWidth(4*getResources().getDisplayMetrics().density);
++            canvas.drawPath(line, paint); paint.setStyle(Paint.Style.FILL);
++            float sx = offsetX + ((float)points.optDouble(0)-minX)*scale;
++            float sy = offsetY + ((float)points.optDouble(1)-minY)*scale;
++            int end = points.length()-2;
++            float ex = offsetX + ((float)points.optDouble(end)-minX)*scale;
++            float ey = offsetY + ((float)points.optDouble(end+1)-minY)*scale;
++            paint.setColor(Color.GREEN); canvas.drawCircle(sx,sy,9,paint);
++            paint.setColor(Color.rgb(255,160,50)); canvas.drawCircle(ex,ey,9,paint);
++        }
++    }
++
+ 	private void createPhysicalKeysSection() {
+ 		Preference debounceTime = findPreference(DropDownKeyPadDebounceTime.NAME);
+ 		if (debounceTime instanceof DropDownKeyPadDebounceTime && activity != null) {
+diff --git a/app/src/main/java/io/github/sspanak/tt9/preferences/settings/SettingsKeyChars.java b/app/src/main/java/io/github/sspanak/tt9/preferences/settings/SettingsKeyChars.java
+index dac5c05..3f7b0d4 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/preferences/settings/SettingsKeyChars.java
++++ b/app/src/main/java/io/github/sspanak/tt9/preferences/settings/SettingsKeyChars.java
+@@ -174,14 +174,15 @@ class SettingsKeyChars extends SettingsInput {
+ 			}
+ 			case 1 -> {
+ 				chars = new ArrayList<>(getChars1AsList(language));
+-				// The large Swipe-T9 layout uses key 1 for '.', but the user still needs
+-				// to type a literal 1 from its punctuation selection.
+-				if ("de".equals(language.getLocale().getLanguage())) {
+-					// Keep the digit 1 right next to comma in the punctuation chooser.
+-					chars.remove("1");
+-					int comma = chars.indexOf(",");
+-					chars.add(comma >= 0 ? comma + 1 : 0, "1");
+-				}
++                // On our German layout: dot is a direct tap on key 1,
++                // literal 1 is its hold action. Punctuation lives in this tray.
++                if ("de".equals(language.getLocale().getLanguage())) {
++                    chars.remove(".");
++                    chars.remove("1");
++                    for (String symbol : new String[] {"?", "!", ",", "-", "„", "“"}) {
++                        if (!chars.contains(symbol)) chars.add(symbol);
++                    }
++                }
+ 				if (!getCharsExtra(language, CHARS_GROUP_1).isEmpty()) {
+ 					chars.add(SuggestionsBar.SHOW_GROUP_1_SUGGESTION);
+ 				}
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyLF4.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyLF4.java
+index 84ef6b4..ef13798 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyLF4.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyLF4.java
+@@ -13,6 +13,7 @@ import io.github.sspanak.tt9.commands.CmdNextKeyboard;
+ import io.github.sspanak.tt9.commands.CmdNextLanguage;
+ import io.github.sspanak.tt9.commands.CmdSelectKeyboard;
+ import io.github.sspanak.tt9.ime.modes.InputModeKind;
++import io.github.sspanak.tt9.ime.modes.InputMode;
+ import io.github.sspanak.tt9.ime.helpers.Key;
+ import io.github.sspanak.tt9.preferences.settings.SettingsStore;
+ import io.github.sspanak.tt9.ui.Vibration;
+@@ -20,6 +21,7 @@ import io.github.sspanak.tt9.ui.Vibration;
+ public class SoftKeyLF4 extends BaseSwipeableKey {
+ 	private final CmdNextLanguage nextLanguage = new CmdNextLanguage();
+ 	private boolean switchedModeByHold = false;
++    private int lastTextMode = InputMode.MODE_PREDICTIVE;
+ 
+ 	public SoftKeyLF4(Context context) {
+ 		super(context);
+@@ -68,7 +70,7 @@ public class SoftKeyLF4 extends BaseSwipeableKey {
+ 		return tt9 != null && tt9.getSettings().isMainLayoutNumpad()
+ 			&& tt9.getLanguage() != null
+ 			&& "de".equals(tt9.getLanguage().getLocale().getLanguage())
+-			&& !tt9.isInputModeNumeric() && !tt9.isFnPanelVisible();
++			&& !tt9.isFnPanelVisible();
+ 	}
+ 
+ 	@Override
+@@ -82,7 +84,13 @@ public class SoftKeyLF4 extends BaseSwipeableKey {
+ 		preventRepeat();
+ 		if (isGermanNumpad()) {
+ 			switchedModeByHold = true;
+-			if (new CmdNextInputMode().run(tt9)) vibrate(Vibration.getHoldVibration());
++            if (tt9.isInputModeNumeric()) {
++                tt9.setInputMode(lastTextMode);
++            } else {
++                lastTextMode = tt9.getInputMode().getId();
++                tt9.setInputMode(InputMode.MODE_123);
++            }
++            vibrate(Vibration.getHoldVibration());
+ 			return;
+ 		}
+ 		if (nextLanguage.isAvailable(tt9) && nextLanguage.run(tt9)) {
+@@ -97,8 +105,12 @@ public class SoftKeyLF4 extends BaseSwipeableKey {
+ 			return true;
+ 		}
+ 		if (!notSwiped()) return false;
+-		if (isGermanNumpad()) {
+-			// Send the actual key-1 event so the normal punctuation chooser opens.
++        if (isGermanNumpad() && tt9.isInputModeNumeric()) {
++            tt9.setInputMode(lastTextMode);
++            return true;
++        }
++        if (isGermanNumpad()) {
++            // The same key opens punctuation; numeric mode offers direct return to T9.
+ 			int code = Key.numberToCode(tt9.getSettings(), 1);
+ 			if (code < 0) return false;
+ 			tt9.onKeyDown(code, new KeyEvent(KeyEvent.ACTION_DOWN, code));
+@@ -120,13 +132,16 @@ public class SoftKeyLF4 extends BaseSwipeableKey {
+ 
+ 	@Override
+ 	protected String getAccessibilityText() {
+-		return isGermanNumpad() ? "Sonderzeichen; halten für T9 oder ABC"
++		return isGermanNumpad() ? "Sonderzeichen; halten für Zahlenmodus"
+ 			: getContext().getString(R.string.function_next_mode);
+ 	}
+ 
+ 	@Override
+ 	protected String getTitle() {
+-		if (isGermanNumpad()) return "?123";
++        if (isGermanNumpad()) {
++            if (tt9.isInputModeNumeric()) return "123 ↩";
++            return tt9.isInputModeABC() ? "ABC ?" : "T9 ?";
++        }
+ 		return tt9 != null ? tt9.getInputModeName() : getContext().getString(R.string.virtual_key_input_mode);
+ 	}
+ 
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyNumber1.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyNumber1.java
+index b868890..5f92cc2 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyNumber1.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyNumber1.java
+@@ -34,8 +34,8 @@ public class SoftKeyNumber1 extends SoftKeyNumberSwipeable {
+ 		if (isGermanTextKey()) {
+ 			punctuationLongPress = true;
+ 			preventRepeat();
+-			// Trigger the original T9 punctuation selection (including comma).
+-			super.handleRelease();
++			// A long press is a literal 1, just like digits 2-9 and 0.
++            if (tt9 != null) tt9.onText("1", false);
+ 		} else {
+ 			super.handleHold();
+ 		}
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyTextLeft.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyTextLeft.java
+index 581a4de..355579d 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyTextLeft.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/keys/SoftKeyTextLeft.java
+@@ -2,6 +2,8 @@ package io.github.sspanak.tt9.ui.main.keys;
+ 
+ import android.content.Context;
+ import android.util.AttributeSet;
++import android.view.KeyEvent;
++import io.github.sspanak.tt9.ime.helpers.Key;
+ 
+ import io.github.sspanak.tt9.commands.CmdUndo;
+ import io.github.sspanak.tt9.preferences.settings.SettingsStore;
+@@ -13,7 +15,7 @@ public class SoftKeyTextLeft extends SoftKeyText {
+ 
+ 	@Override
+ 	protected String getTopText() {
+-		return useQuestionHold() ? "?" : super.getTopText();
++		return useQuestionHold() ? "?123" : super.getTopText();
+ 	}
+ 
+ 
+@@ -34,7 +36,12 @@ public class SoftKeyTextLeft extends SoftKeyText {
+ 		if (useQuestionHold()) {
+ 			questionHold = true;
+ 			preventRepeat();
+-			tt9.onText("?", false);
++            // The exclamation key owns all punctuation except the direct dot.
++            int code = Key.numberToCode(tt9.getSettings(), 1);
++            if (code >= 0) {
++                tt9.onKeyDown(code, new KeyEvent(KeyEvent.ACTION_DOWN, code));
++                tt9.onKeyUp(code, new KeyEvent(KeyEvent.ACTION_UP, code));
++            }
+ 		} else {
+ 			super.handleHold();
+ 		}
+@@ -42,7 +49,7 @@ public class SoftKeyTextLeft extends SoftKeyText {
+ 
+ 	@Override
+ 	protected String getHoldText() {
+-		return useQuestionHold() ? "?" : super.getHoldText();
++		return useQuestionHold() ? "Satzzeichen" : super.getHoldText();
+ 	}
+ 
+ 
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9Gesture.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9Gesture.java
+index cc556ee..960c915 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9Gesture.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9Gesture.java
+@@ -12,6 +12,7 @@ public final class SwipeT9Gesture {
+     private int sampleCount;
+     private int digit = -1;
+     private boolean loopRecognized;
++    private final StringBuilder detectedLoops = new StringBuilder();
+     private float traveled;
+     private float keySize;
+     private float lowX, highX, lowY, highY;
+@@ -20,6 +21,7 @@ public final class SwipeT9Gesture {
+ 
+     public void reset() {
+         sequence.setLength(0);
++        detectedLoops.setLength(0);
+         digit = -1;
+         sampleCount = 0;
+         loopRecognized = false;
+@@ -30,6 +32,17 @@ public final class SwipeT9Gesture {
+ 
+     public String getDigits() { return sequence.toString(); }
+ 
++    public String getLoopDetails() { return detectedLoops.toString(); }
++
++    private void loopFound(String kind, float x, float y) {
++        if (detectedLoops.length() > 0) detectedLoops.append("; ");
++        detectedLoops.append(digit).append(" (").append(kind).append(") bei [")
++                .append(Math.round(sampleX[0])).append(",")
++                .append(Math.round(sampleY[0])).append("] bis [")
++                .append(Math.round(x)).append(",")
++                .append(Math.round(y)).append("]");
++    }
++
+     public void add(int nextDigit, float x, float y, float keyWidth, float keyHeight) {
+         if (nextDigit < 2 || nextDigit > 9 || sequence.length() >= 32) return;
+         if (digit != nextDigit) {
+@@ -75,6 +88,7 @@ public final class SwipeT9Gesture {
+         if (!loopRecognized && horizontalTurns >= 2 && zigzagTravel + horizontalLeg >= 1.1f * keySize
+                 && highY - lowY < .25f * keySize && highX - lowX >= .32f * keySize) {
+             sequence.append((char) ('0' + digit));
++            loopFound("Zickzack", x, y);
+             loopRecognized = true;
+         }
+         if (!loopRecognized && sampleCount >= 7 && traveled >= 1.10f * keySize
+@@ -89,6 +103,7 @@ public final class SwipeT9Gesture {
+                     }
+                     if (path >= .85f * keySize) {
+                         sequence.append((char) ('0' + digit));
++                        loopFound("Kreis", x, y);
+                         loopRecognized = true;
+                         break;
+                     }
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9TouchLayout.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9TouchLayout.java
+index c3c0b84..4058f3d 100644
+--- a/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9TouchLayout.java
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9TouchLayout.java
+@@ -247,13 +247,18 @@ public final class SwipeT9TouchLayout extends LinearLayout {
+             if (captured) {
+                 if (action == MotionEvent.ACTION_UP) {
+                     String digits = gesture.getDigits();
++                    String loops = gesture.getLoopDetails();
++                    int endingAt = digitAt(ev.getX(), ev.getY());
+                     float[] drawing = finishedTrace();
++                    long logId = tt9 != null && tt9.isSwipeT9DiagnosticAllowed()
++                            ? SwipeT9History.add(getContext(), digits, drawing, loops, startDigit, endingAt, true,
++                                    tt9.getLanguage() == null ? -1 : tt9.getLanguage().getId()) : -1;
+                     fadingTrail = true;
+                     fadeStart = SystemClock.uptimeMillis();
+                     clear();
+                     invalidate();
+                     if (digits.length() >= 2 && tt9 != null && tt9.isSwipeT9Allowed()) {
+-                        tt9.onSwipeT9Sequence(digits, drawing);
++                        tt9.onSwipeT9Sequence(digits, drawing, logId);
+                     }
+                 }
+                 return true;
+@@ -261,6 +266,16 @@ public final class SwipeT9TouchLayout extends LinearLayout {
+             // A real tap must still reach the original T9 key. Replaying the
+             // stored DOWN now makes it impossible for an unfinished swipe to
+             // produce a leading number through a key long-press callback.
++            if (action == MotionEvent.ACTION_UP) {
++                // Record failed drags as well (e.g. "Liebe" becoming a single "d").
++                float minDistance = Math.max(ViewConfiguration.get(getContext()).getScaledTouchSlop() * 2,
++                        firstKeyWidth * .35f);
++                if (pathLength >= minDistance && tt9 != null && tt9.isSwipeT9DiagnosticAllowed()) {
++                    SwipeT9History.add(getContext(), gesture.getDigits(), finishedTrace(),
++                            gesture.getLoopDetails(), startDigit, digitAt(ev.getX(), ev.getY()), false,
++                            tt9.getLanguage() == null ? -1 : tt9.getLanguage().getId());
++                }
++            }
+             if (action == MotionEvent.ACTION_UP && !normalKeyStarted) forwardPendingDown();
+             boolean result = normalKeyStarted ? super.dispatchTouchEvent(ev) : true;
+             if (action == MotionEvent.ACTION_UP) {
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 246941b..7f4c868 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -382,4 +382,8 @@
+ 	<string name="swipe_t9_learn_summary">Nur bewusst ausgewählte Wörter und zugehörige Bewegungen lokal speichern; keine Übertragung.</string>
+ 	<string name="swipe_t9_clear_learning">Gelernte Wischbewegungen löschen</string>
+ 	<string name="swipe_t9_clear_learning_summary">Löscht alle lokal gespeicherten Wischbeispiele.</string>
++    <string name="swipe_t9_debug_history">Wischprotokoll aufzeichnen (maximal 100)</string>
++    <string name="swipe_t9_debug_history_summary">Nur bei Bedarf aktivieren. Tastenfolge, Fingerweg, Schleifen und mögliche Wörter lokal speichern; keine Passwörter.</string>
++    <string name="swipe_t9_history">Letzte 100 Wischbewegungen ansehen</string>
++    <string name="swipe_t9_history_summary">Spuren, Tastenfolgen und Wortvorschläge prüfen oder Protokoll löschen.</string>
+ </resources>
+diff --git a/app/src/main/res/xml/prefs_screen_keypad.xml b/app/src/main/res/xml/prefs_screen_keypad.xml
+index cc809e5..e64a0be 100644
+--- a/app/src/main/res/xml/prefs_screen_keypad.xml
++++ b/app/src/main/res/xml/prefs_screen_keypad.xml
+@@ -24,6 +24,18 @@
+ 			android:title="@string/swipe_t9_learn"
+ 			android:summary="@string/swipe_t9_learn_summary" />
+ 
++        <SwitchPreferenceCompat
++            android:key="swipe_t9_debug_history"
++            android:defaultValue="false"
++            android:dependency="swipe_t9_enabled"
++            android:title="@string/swipe_t9_debug_history"
++            android:summary="@string/swipe_t9_debug_history_summary" />
++
++        <Preference
++            android:key="swipe_t9_history"
++            android:title="@string/swipe_t9_history"
++            android:summary="@string/swipe_t9_history_summary" />
++
+ 		<Preference
+ 			android:key="swipe_t9_clear_learning"
+ 			android:title="@string/swipe_t9_clear_learning"
+diff --git a/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9History.java b/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9History.java
+new file mode 100644
+index 0000000..413e257
+--- /dev/null
++++ b/app/src/main/java/io/github/sspanak/tt9/ui/main/swipe/SwipeT9History.java
+@@ -0,0 +1,147 @@
++package io.github.sspanak.tt9.ui.main.swipe;
++
++import android.content.Context;
++import androidx.preference.PreferenceManager;
++import org.json.JSONArray;
++import org.json.JSONObject;
++import java.io.File;
++import java.io.FileInputStream;
++import java.io.FileOutputStream;
++import java.nio.charset.StandardCharsets;
++import java.util.ArrayList;
++
++/**
++ * Local, opt-in gesture diagnostics. Never store surrounding text, application
++ * identity, or passwords. Files in getNoBackupFilesDir() are excluded from Android backup.
++ * All writes are serialized because dictionary callbacks can arrive asynchronously.
++ */
++public final class SwipeT9History {
++    public static final String ENABLED = "swipe_t9_debug_history";
++    private static final String FILE = "swipe_t9_history.json";
++    private static final int LIMIT = 100;
++    private static final int MAX_POINTS = 80;
++    private static final Object LOCK = new Object();
++
++    private SwipeT9History() { }
++
++    public static boolean enabled(Context context) {
++        return PreferenceManager.getDefaultSharedPreferences(context).getBoolean(ENABLED, false);
++    }
++
++    private static File file(Context context) {
++        return new File(context.getNoBackupFilesDir(), FILE);
++    }
++
++    private static JSONArray read(Context context) {
++        try {
++            File input = file(context);
++            if (!input.isFile() || input.length() > 600_000) return new JSONArray();
++            try (FileInputStream stream = new FileInputStream(input)) {
++                byte[] bytes = new byte[(int) input.length()];
++                int read = 0;
++                while (read < bytes.length) {
++                    int n = stream.read(bytes, read, bytes.length - read);
++                    if (n < 0) break;
++                    read += n;
++                }
++                return new JSONArray(new String(bytes, 0, read, StandardCharsets.UTF_8));
++            }
++        } catch (Exception ignored) { return new JSONArray(); }
++    }
++
++    private static void write(Context context, JSONArray entries) {
++        try (FileOutputStream out = new FileOutputStream(file(context), false)) {
++            out.write(entries.toString().getBytes(StandardCharsets.UTF_8));
++        } catch (Exception ignored) { /* Diagnostics must never interrupt typing. */ }
++    }
++
++    public static void clear(Context context) {
++        synchronized (LOCK) {
++            //noinspection ResultOfMethodCallIgnored
++            file(context).delete();
++        }
++    }
++
++    public static ArrayList<JSONObject> list(Context context) {
++        synchronized (LOCK) {
++            JSONArray history = read(context);
++            ArrayList<JSONObject> result = new ArrayList<>();
++            for (int i = history.length()-1; i >= 0; i--) {
++                JSONObject item = history.optJSONObject(i);
++                if (item != null) result.add(item);
++            }
++            return result;
++        }
++    }
++
++    /** Returns a unique record ID, or -1 when diagnostics are off. */
++    public static long add(Context context, String digits, float[] trace, String loops,
++                           int startKey, int endKey, boolean recognized, int languageId) {
++        if (!enabled(context)) return -1;
++        if (digits == null || digits.length() > 32 || trace == null) return -1;
++        synchronized (LOCK) {
++            try {
++                JSONArray existing = read(context);
++                JSONArray entries = new JSONArray();
++                for (int i = Math.max(0, existing.length() - LIMIT + 1); i < existing.length(); i++) {
++                    entries.put(existing.get(i));
++                }
++                long id = System.currentTimeMillis() * 1000 + System.nanoTime() % 1000;
++                JSONArray points = new JSONArray();
++                int count = trace.length / 2;
++                int stored = Math.min(MAX_POINTS, count);
++                for (int i = 0; i < stored; i++) {
++                    int index = stored == 1 ? 0 : i * (count-1) / (stored-1);
++                    points.put(Math.round(trace[index*2] * 10000f) / 10000.0);
++                    points.put(Math.round(trace[index*2+1] * 10000f) / 10000.0);
++                }
++                JSONObject item = new JSONObject()
++                        .put("id", id).put("time", System.currentTimeMillis())
++                        .put("digits", digits).put("start", startKey).put("end", endKey)
++                        .put("loops", loops == null ? "" : loops)
++                        .put("recognized", recognized).put("language", languageId).put("path", points)
++                        .put("shown", new JSONArray()).put("dictionary", new JSONArray()).put("dictionaryChecked", false);
++                entries.put(item);
++                write(context, entries);
++                return id;
++            } catch (Exception ignored) { return -1; }
++        }
++    }
++
++    public static JSONObject find(Context context, long id) {
++        synchronized (LOCK) {
++            JSONArray entries = read(context);
++            for (int i = 0; i < entries.length(); i++) {
++                JSONObject item = entries.optJSONObject(i);
++                if (item != null && item.optLong("id", -1) == id) return item;
++            }
++            return null;
++        }
++    }
++
++    /** Candidate words are stored only if they belong to this recorded swipe. */
++    public static void updateCandidates(Context context, long id, String which, ArrayList<String> candidates) {
++        if (id == -1 || !("shown".equals(which) || "dictionary".equals(which))) return;
++        synchronized (LOCK) {
++            try {
++                JSONArray entries = read(context);
++                for (int i = 0; i < entries.length(); i++) {
++                    JSONObject entry = entries.optJSONObject(i);
++                    if (entry == null || entry.optLong("id", -1) != id) continue;
++                    JSONArray words = new JSONArray();
++                    if (candidates != null) {
++                        int max = Math.min(8, candidates.size());
++                        for (int j = 0; j < max; j++) {
++                            String word = candidates.get(j);
++                            if (word != null && word.length() <= 40) words.put(word);
++                        }
++                    }
++                    entry.put(which, words);
++                    if ("dictionary".equals(which)) entry.put("dictionaryChecked", true);
++                    write(context, entries);
++                    break;
++                }
++            } catch (Exception ignored) { }
++        }
++    }
++}
