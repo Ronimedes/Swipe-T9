@@ -3,6 +3,7 @@ package io.github.sspanak.tt9.ui.main.keys;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.Gravity;
+import android.view.KeyEvent;
 
 import androidx.annotation.NonNull;
 
@@ -12,11 +13,13 @@ import io.github.sspanak.tt9.commands.CmdNextKeyboard;
 import io.github.sspanak.tt9.commands.CmdNextLanguage;
 import io.github.sspanak.tt9.commands.CmdSelectKeyboard;
 import io.github.sspanak.tt9.ime.modes.InputModeKind;
+import io.github.sspanak.tt9.ime.helpers.Key;
 import io.github.sspanak.tt9.preferences.settings.SettingsStore;
 import io.github.sspanak.tt9.ui.Vibration;
 
 public class SoftKeyLF4 extends BaseSwipeableKey {
 	private final CmdNextLanguage nextLanguage = new CmdNextLanguage();
+	private boolean switchedModeByHold = false;
 
 	public SoftKeyLF4(Context context) {
 		super(context);
@@ -61,9 +64,27 @@ public class SoftKeyLF4 extends BaseSwipeableKey {
 		return Math.max(getTT9Height(), getTT9Width()) < 0.9f;
 	}
 
+	private boolean isGermanNumpad() {
+		return tt9 != null && tt9.getSettings().isMainLayoutNumpad()
+			&& tt9.getLanguage() != null
+			&& "de".equals(tt9.getLanguage().getLocale().getLanguage())
+			&& !tt9.isInputModeNumeric() && !tt9.isFnPanelVisible();
+	}
+
+	@Override
+	protected boolean handlePress() {
+		switchedModeByHold = false;
+		return super.handlePress();
+	}
+
 	@Override
 	protected void handleHold() {
 		preventRepeat();
+		if (isGermanNumpad()) {
+			switchedModeByHold = true;
+			if (new CmdNextInputMode().run(tt9)) vibrate(Vibration.getHoldVibration());
+			return;
+		}
 		if (nextLanguage.isAvailable(tt9) && nextLanguage.run(tt9)) {
 			vibrate(Vibration.getHoldVibration());
 		}
@@ -71,7 +92,20 @@ public class SoftKeyLF4 extends BaseSwipeableKey {
 
 	@Override
 	protected boolean handleRelease() {
-		return notSwiped() && new CmdNextInputMode().run(tt9);
+		if (switchedModeByHold) {
+			switchedModeByHold = false;
+			return true;
+		}
+		if (!notSwiped()) return false;
+		if (isGermanNumpad()) {
+			// Send the actual key-1 event so the normal punctuation chooser opens.
+			int code = Key.numberToCode(tt9.getSettings(), 1);
+			if (code < 0) return false;
+			tt9.onKeyDown(code, new KeyEvent(KeyEvent.ACTION_DOWN, code));
+			tt9.onKeyUp(code, new KeyEvent(KeyEvent.ACTION_UP, code));
+			return true;
+		}
+		return new CmdNextInputMode().run(tt9);
 	}
 
 	@Override
@@ -86,21 +120,19 @@ public class SoftKeyLF4 extends BaseSwipeableKey {
 
 	@Override
 	protected String getAccessibilityText() {
-		return getContext().getString(R.string.function_next_mode);
+		return isGermanNumpad() ? "Sonderzeichen; halten für T9 oder ABC"
+			: getContext().getString(R.string.function_next_mode);
 	}
 
 	@Override
 	protected String getTitle() {
-		if (tt9 != null && tt9.getSettings().isMainLayoutNumpad()
-			&& tt9.getLanguage() != null && "de".equals(tt9.getLanguage().getLocale().getLanguage())) {
-			if (InputModeKind.isPredictive(tt9.getInputMode())) return "T9";
-			if (tt9.isInputModeABC()) return "ABC";
-		}
+		if (isGermanNumpad()) return "?123";
 		return tt9 != null ? tt9.getInputModeName() : getContext().getString(R.string.virtual_key_input_mode);
 	}
 
 	@Override
 	protected float getTitleScale() {
+		if (isGermanNumpad()) return super.getTitleScale() * .68f;
 		return super.getTitleScale() * (isBopomofo() && tt9.isInputModeABC() ? 0.63f : 0.9f);
 	}
 
@@ -119,7 +151,7 @@ public class SoftKeyLF4 extends BaseSwipeableKey {
 
 	@Override
 	public boolean isHoldEnabled() {
-		return nextLanguage.isAvailable(tt9);
+		return isGermanNumpad() || nextLanguage.isAvailable(tt9);
 	}
 
 	@Override

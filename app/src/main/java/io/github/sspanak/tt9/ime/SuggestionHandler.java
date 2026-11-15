@@ -3,6 +3,7 @@ package io.github.sspanak.tt9.ime;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
 
 import androidx.annotation.MainThread;
 import androidx.annotation.NonNull;
@@ -105,10 +106,37 @@ abstract public class SuggestionHandler extends TypingHandler {
 			guessNextWord(surroundingText, word);
 		}
 
+		if (isSwipeEmoji(word)) {
+			ensureEmojiSpacing(word);
+		}
 		if (!Characters.getSpace(mLanguage).equals(word)) {
 			waitForSpaceTrimKey();
 		}
 	}
+
+	/** The emoji tray commits via SuggestionOps, not TypingHandler.onText(). */
+	private void ensureEmojiSpacing(String emoji) {
+		InputConnection connection = getCurrentInputConnection();
+		if (connection == null) return;
+		String before = textField.getStringBeforeCursor();
+		int start = before.lastIndexOf(emoji);
+		if (start < 0) return;
+		String tail = before.substring(start + emoji.length());
+		if (!tail.isEmpty() && !tail.equals(" ")) return;
+		String prefix = before.substring(0, start);
+		boolean addBefore = !prefix.isEmpty() && !Character.isWhitespace(prefix.charAt(prefix.length()-1));
+		CharSequence next = connection.getTextAfterCursor(1, 0);
+		boolean addAfter = tail.isEmpty() && (next == null || next.length() == 0 || !Character.isWhitespace(next.charAt(0)));
+		if (!addBefore && !addAfter) return;
+		connection.beginBatchEdit();
+		try {
+			connection.deleteSurroundingText(emoji.length() + tail.length(), 0);
+			connection.commitText((addBefore ? " " : "") + emoji + tail + (addAfter ? " " : ""), 1);
+		} finally {
+			connection.endBatchEdit();
+		}
+	}
+
 
 
 	@NonNull

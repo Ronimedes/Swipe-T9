@@ -375,4 +375,11 @@
 	<string name="voice_input_error_network_failed">Network connection failed</string>
 	<string name="voice_input_error_no_network">No Internet connection</string>
 	<string name="voice_input_error_not_available">Voice input is not available</string>
+
+	<string name="swipe_t9_show_trail">Fingerlinie anzeigen</string>
+	<string name="swipe_t9_show_trail_summary">Die Wischbewegung kurz sichtbar nachzeichnen.</string>
+	<string name="swipe_t9_learn">Aus bestätigten Wischwörtern lernen</string>
+	<string name="swipe_t9_learn_summary">Nur bewusst ausgewählte Wörter und zugehörige Bewegungen lokal speichern; keine Übertragung.</string>
+	<string name="swipe_t9_clear_learning">Gelernte Wischbewegungen löschen</string>
+	<string name="swipe_t9_clear_learning_summary">Löscht alle lokal gespeicherten Wischbeispiele.</string>
 </resources>

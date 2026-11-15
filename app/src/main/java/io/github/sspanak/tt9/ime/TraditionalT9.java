@@ -18,6 +18,9 @@ import io.github.sspanak.tt9.ime.modes.InputModeKind;
 import io.github.sspanak.tt9.languages.LanguageCollection;
 import io.github.sspanak.tt9.preferences.settings.SettingsStore;
 import io.github.sspanak.tt9.ui.UI;
+import io.github.sspanak.tt9.ui.main.swipe.SwipeT9Memory;
+import io.github.sspanak.tt9.util.Text;
+import io.github.sspanak.tt9.ime.modes.InputMode;
 import io.github.sspanak.tt9.util.Logger;
 import io.github.sspanak.tt9.util.SupremeExecutor;
 import io.github.sspanak.tt9.util.sys.DeviceInfo;
@@ -320,15 +323,35 @@ public class TraditionalT9 extends PremiumHandler {
 
 	/** Swipe-T9 first test: apply a detected digit sequence via the existing T9 word engine. */
 	public boolean onSwipeT9Sequence(String digits) {
+		return onSwipeT9Sequence(digits, null);
+	}
+
+	public boolean onSwipeT9Sequence(String digits, float[] drawing) {
 		if (digits == null || digits.isEmpty() || digits.length() > 32 || shouldBeOff()
 			|| isFnPanelVisible() || !InputModeKind.isPredictive(mInputMode)) return false;
+		// Use confirmed, local prototypes only when at least three selections agree.
+		// If there is any doubt, preserve the original T9 dictionary behavior.
+		String language = mLanguage == null ? null : mLanguage.getLocale().getLanguage();
+		String learned = drawing == null ? null : SwipeT9Memory.match(this, language, drawing);
+		if (learned != null) {
+			int textCase = mInputMode.getTextCaseRaw();
+			String chosen = textCase == InputMode.CASE_CAPITALIZE || textCase == InputMode.CASE_UPPER
+				? new Text(mLanguage, learned).toTextCase(textCase) : learned;
+			if (onText(chosen, false)) {
+				markSwipeT9Entered();
+				return true;
+			}
+		}
 		boolean result = false;
 		for (int i = 0; i < digits.length(); i++) {
 			int number = digits.charAt(i) - '0';
 			if (number < 2 || number > 9) return false;
 			result = onNumber(number, false, 0) || result;
 		}
-		if (result) markSwipeT9Entered();
+		if (result) {
+			markSwipeT9Entered();
+			if (drawing != null) rememberPendingSwipe(drawing);
+		}
 		return result;
 	}
 

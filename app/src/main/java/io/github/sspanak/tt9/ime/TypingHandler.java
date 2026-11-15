@@ -34,6 +34,7 @@ import io.github.sspanak.tt9.languages.LanguageCollection;
 import io.github.sspanak.tt9.languages.LanguageKind;
 import io.github.sspanak.tt9.languages.NaturalLanguage;
 import io.github.sspanak.tt9.preferences.settings.SettingsStore;
+import io.github.sspanak.tt9.ui.main.swipe.SwipeT9Memory;
 import io.github.sspanak.tt9.util.Text;
 import io.github.sspanak.tt9.util.chars.Characters;
 
@@ -52,9 +53,28 @@ public abstract class TypingHandler extends KeyPadHandler {
 	// Backspace directly after a swipe should delete that swiped word, not
 	// shorten its digit sequence and unexpectedly show a longer candidate.
 	private boolean eraseSwipeWordOnBackspace = false;
+	@Nullable private float[] pendingSwipeDrawing;
+	@Nullable private String pendingSwipeLanguage;
 
 	protected void markSwipeT9Entered() {
 		eraseSwipeWordOnBackspace = true;
+	}
+
+	protected void rememberPendingSwipe(float[] drawing) {
+		pendingSwipeDrawing = drawing;
+		pendingSwipeLanguage = mLanguage == null ? null : mLanguage.getLocale().getLanguage();
+	}
+
+	private void onSwipeCandidateTapped() {
+		String selected = suggestionOps.getCurrent();
+		float[] drawing = pendingSwipeDrawing;
+		String language = pendingSwipeLanguage;
+		boolean accepted = onOK();
+		pendingSwipeDrawing = null;
+		pendingSwipeLanguage = null;
+		if (accepted && drawing != null && language != null && !shouldBeOff()) {
+			SwipeT9Memory.remember(this, language, selected, drawing);
+		}
 	}
 
 	// input
@@ -77,7 +97,7 @@ public abstract class TypingHandler extends KeyPadHandler {
 
 
 	protected void createSuggestionBar() {
-		suggestionOps = new SuggestionOps(this, settings, mainView, appHacks, inputType, textField, statusBar, this::onAcceptSuggestionsDelayed, this::onOK, this::onSwipeT9SuggestionHold);
+		suggestionOps = new SuggestionOps(this, settings, mainView, appHacks, inputType, textField, statusBar, this::onAcceptSuggestionsDelayed, this::onSwipeCandidateTapped, this::onSwipeT9SuggestionHold);
 	}
 
 
@@ -138,6 +158,8 @@ public abstract class TypingHandler extends KeyPadHandler {
 	protected boolean onStart(EditorInfo field, boolean restarting) {
 		lowercaseNextJoinedPart = false;
 		eraseSwipeWordOnBackspace = false;
+		pendingSwipeDrawing = null;
+		pendingSwipeLanguage = null;
 		boolean restart = restarting || textField.equals(getCurrentInputConnection(), field);
 
 		setInputField(field);
@@ -217,6 +239,7 @@ public abstract class TypingHandler extends KeyPadHandler {
 	 * Reuses the same text deletion helper as the existing Fast Delete implementation.
 	 */
 	public boolean onDeletePreviousWord() {
+		pendingSwipeDrawing = null;
 		eraseSwipeWordOnBackspace = false;
 		lowercaseNextJoinedPart = false;
 		if (InputModeKind.isPassthrough(mInputMode)) {
@@ -250,6 +273,7 @@ public abstract class TypingHandler extends KeyPadHandler {
 
 	@Override
 	public boolean onBackspace(int repeat) {
+		pendingSwipeDrawing = null;
 		lowercaseNextJoinedPart = false;
 		if (eraseSwipeWordOnBackspace && repeat == 0 && !shouldBeOff()) {
 			eraseSwipeWordOnBackspace = false;
@@ -304,6 +328,7 @@ public abstract class TypingHandler extends KeyPadHandler {
 	 * @return boolean
 	 */
 	protected boolean onNumber(int key, boolean hold, int repeat) {
+		pendingSwipeDrawing = null;
 		eraseSwipeWordOnBackspace = false;
 		suggestionOps.cancelDelayedAccept();
 
@@ -355,8 +380,18 @@ public abstract class TypingHandler extends KeyPadHandler {
 	}
 
 
+
+	/** The same emoji spacing rule is used for direct text and the emoji suggestion tray. */
+	protected boolean isSwipeEmoji(String text) {
+		return text != null && settings.isMainLayoutNumpad()
+			&& mLanguage != null && "de".equals(mLanguage.getLocale().getLanguage())
+			&& (Characters.isBuiltInEmoji(text)
+				|| text.codePoints().anyMatch(c -> c >= 0x1F300 && c <= 0x1FAFF));
+	}
+
 	public boolean onText(String text, boolean validateOnly) {
 		if (!validateOnly) {
+			pendingSwipeDrawing = null;
 			eraseSwipeWordOnBackspace = false;
 			lowercaseNextJoinedPart = false;
 		}
@@ -369,6 +404,7 @@ public abstract class TypingHandler extends KeyPadHandler {
 		}
 
 		suggestionOps.cancelDelayedAccept();
+		final boolean spacedEmoji = isSwipeEmoji(text);
 
 		String[] surroundingChars;
 
@@ -388,11 +424,22 @@ public abstract class TypingHandler extends KeyPadHandler {
 
 		mindReader.setContext(mInputMode, mLanguage, surroundingChars, text);
 
+		// Insert spaces around smileys, but never duplicate an existing space.
+		if (spacedEmoji && !surroundingChars[0].isEmpty()
+			&& !Character.isWhitespace(surroundingChars[0].charAt(surroundingChars[0].length() - 1))) {
+			textField.setText(" ");
+			surroundingChars[0] += " ";
+		}
 		// "type" and accept the new word
 		mInputMode.onAcceptSuggestion(text);
 		textField.setText(text);
 		surroundingChars[0] += text;
 		surroundingChars = autoCorrectSpace(text, surroundingChars, true, -1);
+		if (spacedEmoji && !surroundingChars[0].endsWith(" ")
+			&& (surroundingChars[1].isEmpty() || !Character.isWhitespace(surroundingChars[1].charAt(0)))) {
+			textField.setText(" ");
+			surroundingChars[0] += " ";
+		}
 
 		if (surroundingChars[0].endsWith(Characters.getSpace(mLanguage))) {
 			waitForSpaceTrimKey();

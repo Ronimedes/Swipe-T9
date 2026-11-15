@@ -5,6 +5,7 @@ import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
 
 import io.github.sspanak.tt9.R;
+import io.github.sspanak.tt9.ui.main.swipe.SwipeT9Memory;
 import io.github.sspanak.tt9.preferences.PreferencesActivity;
 import io.github.sspanak.tt9.preferences.custom.EnhancedDropDownPreference;
 import io.github.sspanak.tt9.preferences.screens.BaseScreenFragment;
@@ -28,6 +29,11 @@ public class KeyPadScreen extends BaseScreenFragment {
 	}
 
 	private void createTypingSection() {
+		Preference clear = findPreference("swipe_t9_clear_learning");
+		if (clear != null) clear.setOnPreferenceClickListener(p -> {
+			SwipeT9Memory.clear(requireContext());
+			return true;
+		});
 		EnhancedDropDownPreference dropdown = findPreference(DropDownOneKeyEmoji.NAME);
 		if (dropdown != null && activity != null) dropdown.populate(activity.getSettings()).preview();
 

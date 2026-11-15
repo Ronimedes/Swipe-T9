@@ -5,6 +5,11 @@ import android.os.Handler;
 import android.os.Looper;
 import androidx.preference.PreferenceManager;
 import android.graphics.Rect;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.os.SystemClock;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
@@ -34,6 +39,63 @@ public final class SwipeT9TouchLayout extends LinearLayout {
     private final Runnable startNormalHold = this::forwardPendingDown;
     private float startX, startY, lastX, lastY, pathLength, firstKeyWidth;
     private int startDigit;
+    private final Path visibleTrail = new Path();
+    private final Paint trailGlow = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint trailInk = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final float[] trace = new float[512];
+    private int traceCount;
+    private boolean fadingTrail;
+    private long fadeStart;
+
+    private void recordPoint(float x, float y) {
+        if (traceCount < trace.length / 2) {
+            trace[2*traceCount] = x / Math.max(1, getWidth());
+            trace[2*traceCount+1] = y / Math.max(1, getHeight());
+            traceCount++;
+        }
+        if (traceCount == 1) visibleTrail.moveTo(x, y);
+        else visibleTrail.lineTo(x, y);
+        invalidate();
+    }
+
+    private float[] finishedTrace() {
+        float[] copy = new float[traceCount * 2];
+        System.arraycopy(trace, 0, copy, 0, copy.length);
+        return copy;
+    }
+
+    private boolean isTrailEnabled() {
+        return PreferenceManager.getDefaultSharedPreferences(getContext())
+                .getBoolean("swipe_t9_show_trail", true);
+    }
+
+    @Override
+    protected void dispatchDraw(Canvas canvas) {
+        super.dispatchDraw(canvas);
+        if (!isTrailEnabled() || (traceCount < 2 && !fadingTrail)) return;
+        float opacity = fadingTrail ? Math.max(0f, 1f - (SystemClock.uptimeMillis() - fadeStart) / 450f) : 1f;
+        if (opacity == 0f) {
+            fadingTrail = false;
+            visibleTrail.reset();
+            return;
+        }
+        float dp = getResources().getDisplayMetrics().density;
+        trailGlow.setColor(Color.rgb(0, 190, 220));
+        trailGlow.setStyle(Paint.Style.STROKE);
+        trailGlow.setStrokeWidth(12f * dp);
+        trailGlow.setStrokeCap(Paint.Cap.ROUND);
+        trailGlow.setStrokeJoin(Paint.Join.ROUND);
+        trailGlow.setAlpha((int) (55 * opacity));
+        trailInk.setColor(Color.rgb(0, 177, 210));
+        trailInk.setStyle(Paint.Style.STROKE);
+        trailInk.setStrokeWidth(4f * dp);
+        trailInk.setStrokeCap(Paint.Cap.ROUND);
+        trailInk.setStrokeJoin(Paint.Join.ROUND);
+        trailInk.setAlpha((int) (225 * opacity));
+        canvas.drawPath(visibleTrail, trailGlow);
+        canvas.drawPath(visibleTrail, trailInk);
+        if (fadingTrail) postInvalidateDelayed(16);
+    }
 
     public SwipeT9TouchLayout(Context c) { super(c); }
     public SwipeT9TouchLayout(Context c, AttributeSet a) { super(c, a); }
@@ -90,6 +152,7 @@ public final class SwipeT9TouchLayout extends LinearLayout {
         }
         lastX = x;
         lastY = y;
+        recordPoint(x, y);
     }
 
     private void forwardPendingDown() {
@@ -114,6 +177,8 @@ public final class SwipeT9TouchLayout extends LinearLayout {
     @Override
     protected void onDetachedFromWindow() {
         clear();
+        fadingTrail = false;
+        visibleTrail.reset();
         super.onDetachedFromWindow();
     }
 
@@ -123,6 +188,9 @@ public final class SwipeT9TouchLayout extends LinearLayout {
         // One finger only. No interception with TalkBack, special input fields or ABC/numeric mode.
         if (action == MotionEvent.ACTION_DOWN) {
             clear();
+            visibleTrail.reset();
+            traceCount = 0;
+            fadingTrail = false;
             if (tt9 == null || !isEnabled(getContext()) || !tt9.isSwipeT9Allowed()) {
                 return super.dispatchTouchEvent(ev);
             }
@@ -134,6 +202,7 @@ public final class SwipeT9TouchLayout extends LinearLayout {
             View first = findViewById(digitIds[startDigit - 2]);
             firstKeyWidth = first == null ? 70 : Math.max(20, first.getWidth());
             sample(startX, startY);
+            recordPoint(startX, startY);
             // Wait for the gesture decision. Ordinary taps are replayed on UP;
             // a stationary hold starts the original key after a short grace period.
             // This preserves the long-press digit without inserting it into swipes.
@@ -151,6 +220,10 @@ public final class SwipeT9TouchLayout extends LinearLayout {
                 cancel.recycle();
             }
             clear();
+            traceCount = 0;
+            fadingTrail = false;
+            visibleTrail.reset();
+            invalidate();
             return true;
         }
         if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_UP) {
@@ -174,9 +247,13 @@ public final class SwipeT9TouchLayout extends LinearLayout {
             if (captured) {
                 if (action == MotionEvent.ACTION_UP) {
                     String digits = gesture.getDigits();
+                    float[] drawing = finishedTrace();
+                    fadingTrail = true;
+                    fadeStart = SystemClock.uptimeMillis();
                     clear();
+                    invalidate();
                     if (digits.length() >= 2 && tt9 != null && tt9.isSwipeT9Allowed()) {
-                        tt9.onSwipeT9Sequence(digits);
+                        tt9.onSwipeT9Sequence(digits, drawing);
                     }
                 }
                 return true;
@@ -186,7 +263,12 @@ public final class SwipeT9TouchLayout extends LinearLayout {
             // produce a leading number through a key long-press callback.
             if (action == MotionEvent.ACTION_UP && !normalKeyStarted) forwardPendingDown();
             boolean result = normalKeyStarted ? super.dispatchTouchEvent(ev) : true;
-            if (action == MotionEvent.ACTION_UP) clear();
+            if (action == MotionEvent.ACTION_UP) {
+                clear();
+                traceCount = 0;
+                visibleTrail.reset();
+                invalidate();
+            }
             return result;
         }
         return super.dispatchTouchEvent(ev);

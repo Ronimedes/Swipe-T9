@@ -10,6 +10,25 @@
 			android:title="@string/swipe_t9_enable"
 			android:summary="@string/swipe_t9_enable_summary" />
 
+		<SwitchPreferenceCompat
+			android:key="swipe_t9_show_trail"
+			android:defaultValue="true"
+			android:dependency="swipe_t9_enabled"
+			android:title="@string/swipe_t9_show_trail"
+			android:summary="@string/swipe_t9_show_trail_summary" />
+
+		<SwitchPreferenceCompat
+			android:key="swipe_t9_learn"
+			android:defaultValue="false"
+			android:dependency="swipe_t9_enabled"
+			android:title="@string/swipe_t9_learn"
+			android:summary="@string/swipe_t9_learn_summary" />
+
+		<Preference
+			android:key="swipe_t9_clear_learning"
+			android:title="@string/swipe_t9_clear_learning"
+			android:summary="@string/swipe_t9_clear_learning_summary" />
+
 		<Preference
 			android:fragment="io.github.sspanak.tt9.preferences.screens.modeAbc.ModeAbcScreen"
 			android:key="screen_abc_mode"
