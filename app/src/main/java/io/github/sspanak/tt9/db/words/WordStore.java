@@ -121,6 +121,17 @@ public class WordStore extends BaseSyncStore {
 	}
 
 
+	/** Swipe-T9: like getMany(), but keeps each word's frequency for cross-sequence ranking. */
+	@NonNull
+	public io.github.sspanak.tt9.db.entities.WordList getManyWithFrequency(@NonNull CancellationSignal cancel, Language language, String sequence, boolean onlyExactSequence, int maximumWords) {
+		if (!checkOrNotify() || sequence == null || sequence.isEmpty() || language == null || language instanceof NullLanguage) {
+			return new io.github.sspanak.tt9.db.entities.WordList();
+		}
+		String positions = readOps.getSimilarWordPositions(sqlite.getDb(), cancel, language, sequence, onlyExactSequence, "", 0, maximumWords);
+		return readOps.getWords(sqlite.getDb(), cancel, language, positions, "", false, true);
+	}
+
+
 	@NonNull public ArrayList<CustomWord> getSimilarCustom(String wordFilter, int maxWords) {
 		return checkOrNotify() ? readOps.getCustomWords(sqlite.getDb(), wordFilter, maxWords) : new ArrayList<>();
 	}

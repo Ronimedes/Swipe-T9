@@ -118,30 +118,52 @@ public class DataStore {
 
 
 	/**
-	 * Swipe-T9: looks up several digit sequences one after another, in its own background task.
-	 * It uses its own CancellationSignal, so it never cancels the live suggestion query.
-	 * The handler receives the sequences (in the given order) that produced at least one word.
+	 * Swipe-T9 v0.2.11: looks up all readings of one swipe and ranks every found word by
+	 * how likely the reading is (decoder cost) AND how common the word is (frequency).
+	 * If no reading is a whole word, the best readings are tried as word beginnings.
+	 * Runs in its own task with its own CancellationSignal, so live suggestions are not disturbed.
+	 * The handler receives the words, best first; empty when nothing fits at all.
 	 */
-	public static void getWordsForSequences(Consumer<java.util.LinkedHashMap<String, ArrayList<String>>> dataHandler, Language language, java.util.List<String> sequences, int maxWordsPerSequence, int maxWordsTotal) {
-		final ArrayList<String> copy = new ArrayList<>(sequences);
+	public static void getRankedWordsForSequences(Consumer<ArrayList<String>> dataHandler, Language language, java.util.List<String> sequences, java.util.List<Float> costs, int maxWordsPerSequence, int maxWordsTotal) {
+		final ArrayList<String> seqs = new ArrayList<>(sequences);
+		final ArrayList<Float> cost = new ArrayList<>(costs);
 		runInThread(() -> {
-			java.util.LinkedHashMap<String, ArrayList<String>> found = new java.util.LinkedHashMap<>();
-			int total = 0;
+			java.util.HashMap<String, Double> scores = new java.util.HashMap<>();
 			try {
 				CancellationSignal own = new CancellationSignal();
-				for (String sequence : copy) {
-					if (total >= maxWordsTotal) break;
-					ArrayList<String> data = words.getMany(own, language, sequence, true, null, false, 0, maxWordsPerSequence);
-					if (data != null && !data.isEmpty()) {
-						found.put(sequence, data);
-						total += data.size();
+				for (int i = 0; i < seqs.size(); i++) {
+					float c = i < cost.size() ? cost.get(i) : 3f;
+					for (io.github.sspanak.tt9.db.entities.Word w : words.getManyWithFrequency(own, language, seqs.get(i), true, maxWordsPerSequence)) {
+						score(scores, w, c);
+					}
+				}
+				if (scores.isEmpty()) {
+					// Nothing complete: offer the most likely words that START like the best readings.
+					for (int i = 0; i < seqs.size() && i < 8; i++) {
+						float c = (i < cost.size() ? cost.get(i) : 3f) + 0.8f;
+						String seq = seqs.get(i);
+						for (io.github.sspanak.tt9.db.entities.Word w : words.getManyWithFrequency(own, language, seq, false, maxWordsPerSequence)) {
+							if (w.word == null) continue;
+							score(scores, w, c + 0.3f * Math.max(0, w.word.length() - seq.length()));
+						}
 					}
 				}
 			} catch (Exception e) {
 				Logger.e(LOG_TAG, "Swipe-T9 lookup failed: " + e.getMessage());
 			}
-			dataHandler.accept(found);
+			ArrayList<String> ranked = new ArrayList<>(scores.keySet());
+			ranked.sort((a, b) -> Double.compare(scores.get(b), scores.get(a)));
+			while (ranked.size() > maxWordsTotal) ranked.remove(ranked.size() - 1);
+			dataHandler.accept(ranked);
 		});
+	}
+
+
+	private static void score(java.util.HashMap<String, Double> scores, io.github.sspanak.tt9.db.entities.Word w, float cost) {
+		if (w == null || w.word == null || w.word.isEmpty()) return;
+		double s = Math.log1p(Math.max(0, w.frequency)) - 2.0 * cost;
+		Double old = scores.get(w.word);
+		if (old == null || s > old) scores.put(w.word, s);
 	}
 
 

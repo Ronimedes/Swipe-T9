@@ -391,7 +391,7 @@ public class TraditionalT9 extends PremiumHandler {
      * reading that has words is typed as usual; words from the other readings are appended to
      * the suggestion bar, so the user can pick and the swipe memory can learn from that choice.
      */
-    public void onSwipeT9Candidates(String raw, ArrayList<String> candidates, float[] drawing, long logId) {
+    public void onSwipeT9Candidates(String raw, ArrayList<String> candidates, ArrayList<Float> costs, float[] drawing, long logId) {
         if (raw == null || raw.isEmpty() || !isSwipeT9Allowed() || mLanguage == null) return;
         String language = mLanguage.getLocale().getLanguage();
         if (candidates == null || candidates.isEmpty()
@@ -400,47 +400,51 @@ public class TraditionalT9 extends PremiumHandler {
             return;
         }
         final ArrayList<String> sequences = new ArrayList<>(candidates);
-        if (!sequences.contains(raw)) sequences.add(raw);
+        final ArrayList<Float> sequenceCosts = costs == null ? new ArrayList<>() : new ArrayList<>(costs);
+        if (!sequences.contains(raw)) { sequences.add(raw); sequenceCosts.add(4f); }
         final int token = ++swipeLookupToken;
         final io.github.sspanak.tt9.languages.Language lang = mLanguage;
-        DataStore.getWordsForSequences(
-            found -> swipeLookupHandler.post(() -> applySwipeT9Lookup(token, raw, found, drawing, logId)),
-            lang, sequences, 6, 60
+        DataStore.getRankedWordsForSequences(
+            ranked -> swipeLookupHandler.post(() -> applySwipeT9Lookup(token, ranked, drawing, logId)),
+            lang, sequences, sequenceCosts, 6, 40
         );
     }
 
-    private void applySwipeT9Lookup(int token, String raw, java.util.LinkedHashMap<String, ArrayList<String>> found, float[] drawing, long logId) {
-        if (token != swipeLookupToken || !isSwipeT9Allowed() || mInputMode == null) return;
-        prepareSwipeT9WordStart();
-        String best = raw;
-        for (java.util.Map.Entry<String, ArrayList<String>> e : found.entrySet()) {
-            boolean usable = false;
-            for (String w : e.getValue()) {
-                if (w != null && !io.github.sspanak.tt9.ui.main.swipe.SwipeT9Blocklist.isBlocked(this, w)) { usable = true; break; }
-            }
-            if (usable) { best = e.getKey(); break; }
+    /**
+     * v0.2.11: the words come ranked by reading likelihood AND frequency. The best word's own
+     * digit sequence is typed, so it is first in the bar; the other ranked words follow.
+     * If nothing fits, nothing is typed (no more "w, x, y, z").
+     */
+    private void applySwipeT9Lookup(int token, ArrayList<String> ranked, float[] drawing, long logId) {
+        if (token != swipeLookupToken || !isSwipeT9Allowed() || mInputMode == null || mLanguage == null) return;
+        ArrayList<String> words = new ArrayList<>();
+        for (String w : ranked) {
+            if (w != null && !io.github.sspanak.tt9.ui.main.swipe.SwipeT9Blocklist.isBlocked(this, w)) words.add(w);
         }
-        ArrayList<String> extras = new ArrayList<>();
-        ArrayList<String> readings = new ArrayList<>();
-        for (java.util.Map.Entry<String, ArrayList<String>> e : found.entrySet()) {
-            readings.add(e.getKey());
-            boolean usable = false;
-            for (String w : e.getValue()) {
-                if (w == null || io.github.sspanak.tt9.ui.main.swipe.SwipeT9Blocklist.isBlocked(this, w)) continue;
-                usable = true;
-                if (!extras.contains(w)) extras.add(w);
+        String best = null;
+        for (String w : words) {
+            try {
+                best = mLanguage.getDigitSequenceForWord(w);
+                if (best != null && !best.isEmpty() && best.matches("[2-9]+")) break;
+                best = null;
+            } catch (Exception ignored) {
+                best = null;
             }
-            if (!usable) continue;
         }
-        swipeExtraWords = extras.isEmpty() ? null : extras;
-        swipeExtraSequenceLength = mInputMode.getSequenceLength() + best.length();
         if (logId != -1 && isSwipeT9DiagnosticAllowed()) {
-            SwipeT9History.updateDecoder(this, logId, best, readings, extras);
+            SwipeT9History.updateDecoder(this, logId, best == null ? "" : best, new ArrayList<>(), words);
         }
+        if (best == null) {
+            swipeExtraWords = null;
+            return;
+        }
+        prepareSwipeT9WordStart();
+        swipeExtraWords = words;
+        swipeExtraSequenceLength = mInputMode.getSequenceLength() + best.length();
         onSwipeT9Sequence(best, drawing, logId);
     }
 
-    /** Appends the alternative swipe words to the live T9 suggestions of that swipe. */
+    /** Puts the ranked swipe words first, then whatever T9 offers for the typed sequence. */
     public ArrayList<String> mergeSwipeT9Extras(ArrayList<String> suggestions) {
         if (swipeExtraWords == null || mInputMode == null) return suggestions;
         int length = mInputMode.getSequenceLength();
@@ -449,18 +453,24 @@ public class TraditionalT9 extends PremiumHandler {
             return suggestions;
         }
         if (length != swipeExtraSequenceLength) return suggestions;
-        ArrayList<String> merged = new ArrayList<>(suggestions);
+        ArrayList<String> merged = new ArrayList<>();
         int textCase = mInputMode.getTextCaseRaw();
         for (String word : swipeExtraWords) {
             String shown = textCase == InputMode.CASE_CAPITALIZE || textCase == InputMode.CASE_UPPER
                 ? new Text(mLanguage, word).toTextCase(textCase) : word;
-            boolean exists = false;
-            for (String s : merged) {
-                if (s != null && s.equalsIgnoreCase(shown)) { exists = true; break; }
-            }
-            if (!exists) merged.add(shown);
+            if (!containsIgnoreCase(merged, shown)) merged.add(shown);
+        }
+        for (String s : suggestions) {
+            if (s != null && !containsIgnoreCase(merged, s)) merged.add(s);
         }
         return merged;
+    }
+
+    private static boolean containsIgnoreCase(ArrayList<String> list, String word) {
+        for (String s : list) {
+            if (s != null && s.equalsIgnoreCase(word)) return true;
+        }
+        return false;
     }
 
     public boolean onSwipeT9Sequence(String digits, float[] drawing, long logId) {

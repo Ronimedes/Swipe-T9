@@ -36,6 +36,13 @@ public final class SwipeT9Decoder {
 
 	@NonNull
 	public static ArrayList<String> decode(@NonNull SwipeT9Gesture g) {
+		return decode(g, null);
+	}
+
+
+	/** v0.2.11: same as decode(), and fills costsOut (if given) with each reading's cost. */
+	@NonNull
+	public static ArrayList<String> decode(@NonNull SwipeT9Gesture g, ArrayList<Float> costsOut) {
 		Segment[] segments = analyze(g);
 		ArrayList<String> result = new ArrayList<>();
 		if (segments.length == 0) {
@@ -100,7 +107,7 @@ public final class SwipeT9Decoder {
 		choices.sort(Comparator.comparingDouble(c -> c.cost));
 		LinkedHashSet<String> unique = new LinkedHashSet<>();
 		for (Choice c : choices) {
-			unique.add(c.digits);
+			if (unique.add(c.digits) && costsOut != null) costsOut.add(c.cost);
 			if (unique.size() >= MAX_CANDIDATES) break;
 		}
 		result.addAll(unique);
