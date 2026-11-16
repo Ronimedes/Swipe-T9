@@ -99,6 +99,7 @@ public class TraditionalT9 extends PremiumHandler {
 		super.onFinishInputView(finishingInput);
 		io.github.sspanak.tt9.ui.main.keys.SwipeT9SymbolPopup.dismiss();
 		io.github.sspanak.tt9.ui.main.keys.SwipeT9WordMenu.dismiss();
+		io.github.sspanak.tt9.ui.main.keys.SwipeT9EmojiPopup.dismiss();
 		onFinishTyping(finishingInput);
 	}
 

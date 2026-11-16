@@ -56,6 +56,20 @@ public class KeyPadScreen extends BaseScreenFragment {
             showHistory();
             return true;
         });
+		Preference update = findPreference("swipe_t9_check_update");
+		if (update != null) {
+			update.setSummary("Installiert: " + io.github.sspanak.tt9.BuildConfig.VERSION_NAME
+				+ ". Öffnet die Download-Seite im Browser. Die Tastatur selbst hat keinen Internetzugang.");
+			update.setOnPreferenceClickListener(p -> {
+				try {
+					android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW,
+						android.net.Uri.parse("https://github.com/Ronimedes/Swipe-T9/releases/latest"));
+					intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+					startActivity(intent);
+				} catch (Exception ignored) { }
+				return true;
+			});
+		}
 		Preference blocklist = findPreference("swipe_t9_blocklist");
 		if (blocklist != null) blocklist.setOnPreferenceClickListener(p -> {
 			showBlocklist();

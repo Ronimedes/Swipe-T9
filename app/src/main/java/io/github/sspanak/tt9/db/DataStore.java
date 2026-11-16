@@ -159,9 +159,25 @@ public class DataStore {
 	}
 
 
+	/** v0.2.12: abbreviations (Nr, td, ve, APS, VÖEST) are rarely swiped: push them back. */
+	private static double swipeAbbreviationPenalty(String word) {
+		if (word.length() < 2) return 0;
+		String lower = word.toLowerCase(java.util.Locale.GERMAN);
+		boolean hasVowel = false;
+		for (int i = 0; i < lower.length(); i++) {
+			if ("aeiouyäöü".indexOf(lower.charAt(i)) >= 0) { hasVowel = true; break; }
+		}
+		double penalty = hasVowel ? 0 : 2.5;
+		int upper = 0;
+		for (int i = 0; i < word.length(); i++) if (Character.isUpperCase(word.charAt(i))) upper++;
+		if (upper >= 2) penalty += 1.5;
+		return penalty;
+	}
+
+
 	private static void score(java.util.HashMap<String, Double> scores, io.github.sspanak.tt9.db.entities.Word w, float cost) {
 		if (w == null || w.word == null || w.word.isEmpty()) return;
-		double s = Math.log1p(Math.max(0, w.frequency)) - 2.0 * cost;
+		double s = Math.log1p(Math.max(0, w.frequency)) - 2.0 * cost - swipeAbbreviationPenalty(w.word);
 		Double old = scores.get(w.word);
 		if (old == null || s > old) scores.put(w.word, s);
 	}

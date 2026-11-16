@@ -86,6 +86,11 @@ public class SoftKeyArrow extends BaseSoftKeyCustomizable {
 			return false;
 		}
 
+		// v0.2.12: the small arrows of the suggestion bar finish the word being typed.
+		if (isSmall() && tt9.getSettings().isMainLayoutNumpad() && tt9.finishSwipeT9Word(isRight())) {
+			return true;
+		}
+
 		if (isLeft()) return onLeft();
 		if (isRight()) return onRight();
 

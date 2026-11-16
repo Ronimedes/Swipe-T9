@@ -41,6 +41,11 @@
             android:title="Ausgeblendete Wörter"
             android:summary="Wörter, die nie vorgeschlagen werden. Antippen zum Wiederherstellen oder Hinzufügen." />
 
+        <Preference
+            android:key="swipe_t9_check_update"
+            android:title="Neue Version suchen"
+            android:summary="Öffnet die Download-Seite im Browser. Die Tastatur selbst hat keinen Internetzugang." />
+
 		<Preference
 			android:key="swipe_t9_clear_learning"
 			android:title="@string/swipe_t9_clear_learning"

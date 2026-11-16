@@ -53,6 +53,8 @@ public abstract class TypingHandler extends KeyPadHandler {
 
 	@Nullable private Handler shiftStateDebounceHandler;
 	private boolean lowercaseNextJoinedPart = false;
+	// v0.2.12: set by ▶ in the suggestion bar: the next swiped word is glued on without a space.
+	private boolean joinNextSwipeWord = false;
 	// Backspace directly after a swipe should delete that swiped word, not
 	// shorten its digit sequence and unexpectedly show a longer candidate.
 	private boolean eraseSwipeWordOnBackspace = false;
@@ -417,11 +419,12 @@ public abstract class TypingHandler extends KeyPadHandler {
 		return text != null && settings.isMainLayoutNumpad()
 			&& mLanguage != null && "de".equals(mLanguage.getLocale().getLanguage())
 			&& (Characters.isBuiltInEmoji(text)
-				|| text.codePoints().anyMatch(c -> c >= 0x1F300 && c <= 0x1FAFF));
+				|| text.codePoints().anyMatch(c -> (c >= 0x1F300 && c <= 0x1FAFF) || (c >= 0x2600 && c <= 0x27BF) || c == 0x2B50));
 	}
 
 	public boolean onText(String text, boolean validateOnly) {
 		if (!validateOnly) {
+			joinNextSwipeWord = false;
 			pendingSwipeDrawing = null;
 			eraseSwipeWordOnBackspace = false;
 			lowercaseNextJoinedPart = false;
@@ -502,6 +505,11 @@ public abstract class TypingHandler extends KeyPadHandler {
 				mInputMode.onAcceptSuggestion(lastWord);
 			}
 		}
+		if (joinNextSwipeWord) {
+			joinNextSwipeWord = false;
+			mInputMode.setTextCase(InputMode.CASE_LOWER);
+			return;
+		}
 		String before = textField.getStringBeforeCursor(1);
 		if (!before.isEmpty()) {
 			char c = before.charAt(before.length() - 1);
@@ -511,6 +519,34 @@ public abstract class TypingHandler extends KeyPadHandler {
 		}
 		String[] surrounding = textField.getSurroundingStringForAutoAssistance(settings, mInputMode);
 		mInputMode.determineNextWordTextCase(surrounding[0], -1);
+	}
+
+	/**
+	 * v0.2.12: the arrows in the suggestion bar finish the current word.
+	 * ▶ (joinNext): no space; the next swiped word is appended directly (Haus ▶ Tür = Haustür).
+	 * ◀: finish with a space.
+	 * @return false when nothing is being typed, so the arrows keep moving the cursor.
+	 */
+	public boolean finishSwipeT9Word(boolean joinNext) {
+		if (shouldBeOff() || !InputModeKind.isPredictive(mInputMode) || mInputMode.getSequenceLength() <= 0) {
+			return false;
+		}
+		final String word = suggestionOps.getCurrent();
+		if (!onJoinWithoutSpace()) {
+			return false;
+		}
+		onSwipeT9WordAccepted(word);
+		if (joinNext) {
+			joinNextSwipeWord = true;
+			return true;
+		}
+		joinNextSwipeWord = false;
+		lowercaseNextJoinedPart = false;
+		textField.setText(" ");
+		String[] surrounding = textField.getSurroundingStringForAutoAssistance(settings, mInputMode);
+		mInputMode.determineNextWordTextCase(surrounding[0], -1);
+		updateShiftState(surrounding[0], false, false);
+		return true;
 	}
 
 	/** v0.2.10: overridden to note the accepted word in the swipe log. */

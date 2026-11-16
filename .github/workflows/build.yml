@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -62,3 +62,18 @@ jobs:
           path: app/build/outputs/apk/full/debug/*.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: GitHub-Release veroeffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.name }}
+        run: |
+          TAG="v${VERSION}"
+          APK="Swipe-T9-v${VERSION}.apk"
+          cp "$(ls app/build/outputs/apk/full/debug/*.apk | head -1)" "$APK"
+          NOTES="Swipe-T9 ${TAG} (Branch ${GITHUB_REF_NAME}, Commit ${GITHUB_SHA::7}). Installieren: APK herunterladen und oeffnen. Updates installieren sich ueber die alte Version."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+          else
+            gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "Swipe-T9 ${TAG}" --notes "$NOTES"
+          fi
