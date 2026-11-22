@@ -121,6 +121,15 @@ public class WordStore extends BaseSyncStore {
 	}
 
 
+	/** Swipe-T9 v0.2.15: prefix / exact sequence check for the swipe search. */
+	public boolean hasSequence(Language language, String prefix, boolean exact) {
+		if (!checkOrNotify() || prefix == null || prefix.isEmpty() || language == null || language instanceof NullLanguage) {
+			return false;
+		}
+		return readOps.hasSequence(sqlite.getDb(), language, prefix, exact);
+	}
+
+
 	/** Swipe-T9: like getMany(), but keeps each word's frequency for cross-sequence ranking. */
 	@NonNull
 	public io.github.sspanak.tt9.db.entities.WordList getManyWithFrequency(@NonNull CancellationSignal cancel, Language language, String sequence, boolean onlyExactSequence, int maximumWords) {

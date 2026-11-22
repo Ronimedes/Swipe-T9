@@ -125,9 +125,54 @@ public class DataStore {
 	 * The handler receives the words, best first; empty when nothing fits at all.
 	 */
 	public static void getRankedWordsForSequences(Consumer<ArrayList<String>> dataHandler, Language language, java.util.List<String> sequences, java.util.List<Float> costs, int maxWordsPerSequence, int maxWordsTotal) {
-		final ArrayList<String> seqs = new ArrayList<>(sequences);
-		final ArrayList<Float> cost = new ArrayList<>(costs);
+		getRankedWordsForSwipe(dataHandler, language, null, sequences, costs, maxWordsPerSequence, maxWordsTotal);
+	}
+
+
+	/**
+	 * v0.2.15: like getRankedWordsForSequences(), but first runs the dictionary-guided search over
+	 * the key visits of the trace. Its readings are merged with the decoder's fixed readings.
+	 */
+	public static void getRankedWordsForSwipe(Consumer<ArrayList<String>> dataHandler, Language language,
+	                                          io.github.sspanak.tt9.ui.main.swipe.SwipeT9Decoder.Segments segments,
+	                                          java.util.List<String> sequences, java.util.List<Float> costs,
+	                                          int maxWordsPerSequence, int maxWordsTotal) {
+		final ArrayList<String> fixedSeqs = new ArrayList<>(sequences);
+		final ArrayList<Float> fixedCosts = new ArrayList<>(costs);
 		runInThread(() -> {
+			java.util.HashMap<String, Float> merged = new java.util.HashMap<>();
+			for (int i = 0; i < fixedSeqs.size(); i++) {
+				merged.put(fixedSeqs.get(i), i < fixedCosts.size() ? fixedCosts.get(i) : 3f);
+			}
+			if (segments != null && segments.digits.length > 0) {
+				try {
+					io.github.sspanak.tt9.ui.main.swipe.SwipeT9PrefixSearch.Dictionary dict = new io.github.sspanak.tt9.ui.main.swipe.SwipeT9PrefixSearch.Dictionary() {
+						@Override public boolean hasPrefix(@androidx.annotation.NonNull String digits) { return words.hasSequence(language, digits, false); }
+						@Override public boolean isWord(@androidx.annotation.NonNull String digits) { return words.hasSequence(language, digits, true); }
+					};
+					for (io.github.sspanak.tt9.ui.main.swipe.SwipeT9PrefixSearch.Result r
+						: io.github.sspanak.tt9.ui.main.swipe.SwipeT9PrefixSearch.search(segments.digits, segments.strength, segments.doubled, dict, 30, 15)) {
+						Float old = merged.get(r.digits);
+						if (old == null || r.cost < old) merged.put(r.digits, r.cost);
+					}
+				} catch (Exception e) {
+					Logger.e(LOG_TAG, "Swipe-T9 prefix search failed: " + e.getMessage());
+				}
+			}
+			ArrayList<java.util.Map.Entry<String, Float>> ordered = new ArrayList<>(merged.entrySet());
+			ordered.sort((a, b) -> Float.compare(a.getValue(), b.getValue()));
+			ArrayList<String> seqs = new ArrayList<>();
+			ArrayList<Float> cost = new ArrayList<>();
+			for (int i = 0; i < ordered.size() && i < 110; i++) {
+				seqs.add(ordered.get(i).getKey());
+				cost.add(ordered.get(i).getValue());
+			}
+			dataHandler.accept(rankSync(language, seqs, cost, maxWordsPerSequence, maxWordsTotal));
+		});
+	}
+
+
+	private static ArrayList<String> rankSync(Language language, ArrayList<String> seqs, ArrayList<Float> cost, int maxWordsPerSequence, int maxWordsTotal) {
 			java.util.HashMap<String, Double> scores = new java.util.HashMap<>();
 			try {
 				CancellationSignal own = new CancellationSignal();
@@ -154,8 +199,7 @@ public class DataStore {
 			ArrayList<String> ranked = new ArrayList<>(scores.keySet());
 			ranked.sort((a, b) -> Double.compare(scores.get(b), scores.get(a)));
 			while (ranked.size() > maxWordsTotal) ranked.remove(ranked.size() - 1);
-			dataHandler.accept(ranked);
-		});
+			return ranked;
 	}
 
 

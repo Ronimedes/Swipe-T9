@@ -24,4 +24,24 @@ public class SoftKeyEmojiText extends SoftKeyShowEmojis {
         }
         return super.handleRelease();
     }
+
+    /**
+     * v0.2.15: align with the arrow keys: same insets (so the background starts at the same
+     * height) and the smiley lifted a little.
+     */
+    @Override
+    public void render() {
+        super.render();
+        android.view.View parent = getParent() instanceof android.view.View ? (android.view.View) getParent() : null;
+        android.view.View arrow = parent != null ? parent.findViewById(io.github.sspanak.tt9.R.id.soft_key_right_arrow) : null;
+        if (arrow instanceof com.google.android.material.button.MaterialButton) {
+            com.google.android.material.button.MaterialButton a = (com.google.android.material.button.MaterialButton) arrow;
+            if (getInsetTop() != a.getInsetTop()) setInsetTop(a.getInsetTop());
+            if (getInsetBottom() != a.getInsetBottom()) setInsetBottom(a.getInsetBottom());
+        }
+        int lift = Math.round(5 * getResources().getDisplayMetrics().density);
+        if (getPaddingBottom() != lift || getPaddingTop() != 0) {
+            setPadding(getPaddingLeft(), 0, getPaddingRight(), lift);
+        }
+    }
 }

@@ -21,7 +21,7 @@ public final class SwipeT9Gesture {
 
     // Swipe-T9 v0.2.8: every sample of the whole gesture plus the key segments, for SwipeT9Decoder.
     static final int MAX_GLOBAL = 2048;
-    static final int MAX_SEGMENTS = 32;
+    static final int MAX_SEGMENTS = 64;
     final float[] gX = new float[MAX_GLOBAL];
     final float[] gY = new float[MAX_GLOBAL];
     int gCount;
@@ -58,7 +58,7 @@ public final class SwipeT9Gesture {
     }
 
     public void add(int nextDigit, float x, float y, float keyWidth, float keyHeight) {
-        if (nextDigit < 2 || nextDigit > 9 || sequence.length() >= 32) return;
+        if (nextDigit < 2 || nextDigit > 9 || sequence.length() >= 64) return;
         if (digit != nextDigit && segCount < MAX_SEGMENTS) {
             segDigit[segCount] = nextDigit;
             segStart[segCount] = gCount;

@@ -407,7 +407,8 @@ public class TraditionalT9 extends PremiumHandler {
      * reading that has words is typed as usual; words from the other readings are appended to
      * the suggestion bar, so the user can pick and the swipe memory can learn from that choice.
      */
-    public void onSwipeT9Candidates(String raw, ArrayList<String> candidates, ArrayList<Float> costs, float[] drawing, long logId) {
+    public void onSwipeT9Candidates(String raw, ArrayList<String> candidates, ArrayList<Float> costs,
+                                    io.github.sspanak.tt9.ui.main.swipe.SwipeT9Decoder.Segments segments, float[] drawing, long logId) {
         if (raw == null || raw.isEmpty() || !isSwipeT9Allowed() || mLanguage == null) return;
         String language = mLanguage.getLocale().getLanguage();
         if (candidates == null || candidates.isEmpty()
@@ -420,9 +421,9 @@ public class TraditionalT9 extends PremiumHandler {
         if (!sequences.contains(raw)) { sequences.add(raw); sequenceCosts.add(4f); }
         final int token = ++swipeLookupToken;
         final io.github.sspanak.tt9.languages.Language lang = mLanguage;
-        DataStore.getRankedWordsForSequences(
+        DataStore.getRankedWordsForSwipe(
             ranked -> swipeLookupHandler.post(() -> applySwipeT9Lookup(token, ranked, drawing, logId)),
-            lang, sequences, sequenceCosts, 6, 40
+            lang, segments, sequences, sequenceCosts, 6, 40
         );
     }
 

@@ -250,6 +250,7 @@ public final class SwipeT9TouchLayout extends LinearLayout {
                     String loops = gesture.getLoopDetails();
                     java.util.ArrayList<Float> costs = new java.util.ArrayList<>();
                     java.util.ArrayList<String> candidates = SwipeT9Decoder.decode(gesture, costs);
+                    SwipeT9Decoder.Segments segments = SwipeT9Decoder.segments(gesture);
                     int endingAt = digitAt(ev.getX(), ev.getY());
                     float[] drawing = finishedTrace();
                     long logId = tt9 != null && tt9.isSwipeT9DiagnosticAllowed()
@@ -260,7 +261,7 @@ public final class SwipeT9TouchLayout extends LinearLayout {
                     clear();
                     invalidate();
                     if (digits.length() >= 2 && tt9 != null && tt9.isSwipeT9Allowed()) {
-                        tt9.onSwipeT9Candidates(digits, candidates, costs, drawing, logId);
+                        tt9.onSwipeT9Candidates(digits, candidates, costs, segments, drawing, logId);
                     }
                 }
                 return true;

@@ -83,6 +83,30 @@ public class ReadOps {
 
 
 	/**
+	 * Swipe-T9 v0.2.15: does any word (factory or custom) have a digit sequence starting with
+	 * "prefix" (exact = false) or equal to it (exact = true)? Uses the (sequence, start) index.
+	 */
+	public boolean hasSequence(@NonNull SQLiteDatabase db, @NonNull Language language, @NonNull String prefix, boolean exact) {
+		final String factorySql = exact
+			? "SELECT COUNT(*) FROM (SELECT 1 FROM " + Tables.getWordPositions(language.getId()) + " WHERE sequence = ? LIMIT 1)"
+			: "SELECT COUNT(*) FROM (SELECT 1 FROM " + Tables.getWordPositions(language.getId()) + " WHERE sequence >= ? AND sequence < ? LIMIT 1)";
+		SQLiteStatement factory = CompiledQueryCache.get(db, factorySql);
+		factory.bindString(1, prefix);
+		if (!exact) factory.bindString(2, prefix + ":");
+		if (factory.simpleQueryForLong() > 0) return true;
+
+		final String customSql = exact
+			? "SELECT COUNT(*) FROM (SELECT 1 FROM " + Tables.CUSTOM_WORDS + " WHERE langId = ? AND sequence = ? LIMIT 1)"
+			: "SELECT COUNT(*) FROM (SELECT 1 FROM " + Tables.CUSTOM_WORDS + " WHERE langId = ? AND sequence >= ? AND sequence < ? LIMIT 1)";
+		SQLiteStatement custom = CompiledQueryCache.get(db, customSql);
+		custom.bindLong(1, language.getId());
+		custom.bindString(2, prefix);
+		if (!exact) custom.bindString(3, prefix + ":");
+		return custom.simpleQueryForLong() > 0;
+	}
+
+
+	/**
 	 * Checks if language exists (has words) in the database.
 	 */
 	public boolean exists(@NonNull SQLiteDatabase db, int langId) {

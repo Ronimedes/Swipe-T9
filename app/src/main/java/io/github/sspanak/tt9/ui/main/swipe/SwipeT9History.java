@@ -80,7 +80,7 @@ public final class SwipeT9History {
     public static long add(Context context, String digits, float[] trace, String loops,
                            int startKey, int endKey, boolean recognized, int languageId) {
         if (!enabled(context)) return -1;
-        if (digits == null || digits.length() > 32 || trace == null) return -1;
+        if (digits == null || digits.length() > 64 || trace == null) return -1;
         synchronized (LOCK) {
             try {
                 // v0.2.13: correction log. Keep only swipes that were deleted afterwards,

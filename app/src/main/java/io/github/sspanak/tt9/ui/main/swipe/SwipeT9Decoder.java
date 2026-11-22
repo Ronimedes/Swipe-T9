@@ -115,6 +115,27 @@ public final class SwipeT9Decoder {
 	}
 
 
+	/** v0.2.15: the key visits of the trace, for SwipeT9PrefixSearch. */
+	public static final class Segments {
+		public final int[] digits;
+		public final float[] strength;
+		public final boolean[] doubled;
+		Segments(int n) { digits = new int[n]; strength = new float[n]; doubled = new boolean[n]; }
+	}
+
+	@NonNull
+	public static Segments segments(@NonNull SwipeT9Gesture g) {
+		Segment[] seg = analyze(g);
+		Segments out = new Segments(seg.length);
+		for (int i = 0; i < seg.length; i++) {
+			out.digits[i] = seg[i].digit;
+			out.strength[i] = seg[i].strength;
+			out.doubled[i] = seg[i].doubled;
+		}
+		return out;
+	}
+
+
 	private static final class Choice {
 		final String digits;
 		final float cost;
