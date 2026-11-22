@@ -9,8 +9,11 @@ public class SoftKeyEmojiText extends SoftKeyShowEmojis {
     public SoftKeyEmojiText(Context context, AttributeSet attrs) { super(context, attrs); }
     public SoftKeyEmojiText(Context context, AttributeSet attrs, int defStyleAttr) { super(context, attrs, defStyleAttr); }
 
-    // v0.2.13: no colored emoji glyph any more (it overflowed the bar). The key now shows the
-    // regular smiley icon in the same color and size as the arrow keys next to it.
+    // v0.2.14: plain one-colored smiley as text (U+FE0E = text style, not a colored emoji),
+    // in the same color as the arrows. The icon of v0.2.13 did not show up.
+    @Override protected String getTitle() { return "\u263A\uFE0E"; }
+    @Override protected int getCentralIcon() { return -1; }
+    @Override protected float getTitleScale() { return super.getTitleScale() * 0.9f; }
 
     /** v0.2.12: German numpad opens the Swipe-T9 picker with categories and recent emojis. */
     @Override protected boolean handleRelease() {

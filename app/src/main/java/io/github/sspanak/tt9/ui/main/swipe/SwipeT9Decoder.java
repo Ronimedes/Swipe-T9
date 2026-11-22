@@ -171,16 +171,24 @@ public final class SwipeT9Decoder {
 			int to = (i + 1 < n ? g.segStart[i + 1] : g.gCount) - 1; // inclusive
 			to = Math.max(from, Math.min(to, g.gCount - 1));
 
-			if (i == 0 || i == n - 1 || s.doubled) {
+			// Path inside the key and how far the key was actually entered.
+			float path = 0;
+			for (int k = from + 1; k <= to; k++) {
+				path += (float) Math.hypot(g.gX[k] - g.gX[k - 1], g.gY[k] - g.gY[k - 1]);
+			}
+
+			if (s.doubled) {
 				s.strength = 1f;
 				out[i] = s;
 				continue;
 			}
 
-			// Path inside the key and how far the key was actually entered.
-			float path = 0;
-			for (int k = from + 1; k <= to; k++) {
-				path += (float) Math.hypot(g.gX[k] - g.gX[k - 1], g.gY[k] - g.gY[k - 1]);
+			// v0.2.14: the first/last key is usually meant, but a finger that lands or lifts
+			// just on the edge of a neighbour key touches it only briefly. Then it may be dropped.
+			if (i == 0 || i == n - 1) {
+				s.strength = (n > 2 && path < 0.3f * key) ? 0.6f : 1f;
+				out[i] = s;
+				continue;
 			}
 
 			// Direction change: compare travel direction before and after this key.

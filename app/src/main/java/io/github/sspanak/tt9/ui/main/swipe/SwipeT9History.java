@@ -239,4 +239,9 @@ public final class SwipeT9History {
     public static void clearRankStats(Context context) {
         context.getSharedPreferences(RANK_PREFS, Context.MODE_PRIVATE).edit().clear().apply();
     }
+
+    /** v0.2.14: nothing was suggested for this swipe; counts as a correction. */
+    public static void markNoSuggestion(Context context, long id) {
+        editEntry(context, id, entry -> entry.put("deleted", true).put("noSuggestion", true));
+    }
 }

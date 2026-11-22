@@ -452,6 +452,13 @@ public class TraditionalT9 extends PremiumHandler {
         }
         if (best == null) {
             swipeExtraWords = null;
+            // v0.2.14: keep it in the correction log; the next word written is what was meant.
+            if (logId != -1 && isSwipeT9DiagnosticAllowed()) {
+                SwipeT9History.markNoSuggestion(this, logId);
+                awaitingReplacementLogId = logId;
+                correctableSwipeLogId = -1;
+                chosenSwipeLogId = -1;
+            }
             return;
         }
         prepareSwipeT9WordStart();

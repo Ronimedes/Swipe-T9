@@ -167,7 +167,9 @@ public class KeyPadScreen extends BaseScreenFragment {
             String chosenInfo = chosen.isEmpty() ? "" : "\n   gewählt: " + chosen + (e.optBoolean("learned") ? "  ✓ gelernt" : "");
             String targetInfo = target.isEmpty() ? "" : "\n   gemeint: " + target + (containsWord(e, target) ? "  ✓" : "  ✗");
             String replacement = e.optString("replacement", "");
-            String replacementInfo = "\n   gelöscht" + (replacement.isEmpty() ? "" : " → ersetzt durch: " + replacement
+            String replacementInfo = (e.optBoolean("noSuggestion") ? "\n   nichts gefunden" + (replacement.isEmpty() ? "" : " → gemeint: " + replacement)
+                    : "\n   gelöscht" + (replacement.isEmpty() ? "" : " → ersetzt durch: " + replacement))
+                    + (replacement.isEmpty() ? "" : ""
                     + (e.optBoolean("replacementSwiped") ? " (gewischt)" : " (getippt)")
                     + (containsWord(e, replacement) ? "  · stand in der Liste" : "  · nicht angeboten"));
             names[i] = time + "  " + e.optString("digits", "?") +
