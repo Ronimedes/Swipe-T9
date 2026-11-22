@@ -225,7 +225,7 @@ public class MainLayoutClassic extends MainLayoutExtraPanel {
 		super.renderKeys(onlyDynamic);
 
 		// toggle the long space row
-		if (!tt9.getSettings().isNumpadShapeLongSpace() || tt9.isInputModeNumeric() || isFnPanelVisible() || (tt9.getLanguage() != null && tt9.getLanguage().hasLettersOnAllKeys())) {
+		if (!tt9.getSettings().isNumpadShapeLongSpace() || (tt9.isInputModeNumeric() && !io.github.sspanak.tt9.ui.main.keys.SwipeT9Layout.isUnifiedBottomRow(tt9)) || isFnPanelVisible() || (tt9.getLanguage() != null && tt9.getLanguage().hasLettersOnAllKeys())) {
 			showLongSpace(false, 0);
 			return;
 		}

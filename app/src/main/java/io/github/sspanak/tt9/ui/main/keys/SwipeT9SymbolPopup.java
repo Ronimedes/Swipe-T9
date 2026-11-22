@@ -28,6 +28,12 @@ public final class SwipeT9SymbolPopup {
 		"‚", "‘", "-", "–", "…", "(", ")", "¡",
 	};
 
+	/** v0.2.13: first tab in number mode. */
+	static final String[] NUMERIC = {
+		",", ".", "-", "+", "/", ":", "€", "%",
+		"(", ")", "=", "*", "#", "@", "&", "°",
+	};
+
 	static final String[] SYMBOLS = {
 		"@", "#", "€", "$", "%", "&", "/", "\\",
 		"+", "=", "*", "_", "§", "°", "^", "~",
@@ -58,7 +64,7 @@ public final class SwipeT9SymbolPopup {
 	}
 
 
-	static void show(@NonNull View key, @Nullable TraditionalT9 tt9, boolean symbolsFirst) {
+	static void show(@NonNull View key, @Nullable TraditionalT9 tt9, boolean numeric) {
 		if (tt9 == null) {
 			return;
 		}
@@ -87,7 +93,8 @@ public final class SwipeT9SymbolPopup {
 
 		LinearLayout tabs = new LinearLayout(context);
 		tabs.setOrientation(LinearLayout.HORIZONTAL);
-		TextView tabPunctuation = makeTab(context, "Satzzeichen  ! ? ,", textColor);
+		final String[] firstTab = numeric ? NUMERIC : PUNCTUATION;
+		TextView tabPunctuation = makeTab(context, numeric ? "Zahlenzeichen  , . €" : "Satzzeichen  ! ? ,", textColor);
 		TextView tabSymbols = makeTab(context, "Sonderzeichen  @ # €", textColor);
 		tabs.addView(tabPunctuation, new LinearLayout.LayoutParams(0, dp(context, TAB_HEIGHT_DP), 1));
 		tabs.addView(tabSymbols, new LinearLayout.LayoutParams(0, dp(context, TAB_HEIGHT_DP), 1));
@@ -103,7 +110,7 @@ public final class SwipeT9SymbolPopup {
 		popup.setClippingEnabled(true);
 
 		Runnable showPunctuation = () -> {
-			fillGrid(grid, PUNCTUATION, textColor, tt9);
+			fillGrid(grid, firstTab, textColor, tt9);
 			markTab(tabPunctuation, true, textColor);
 			markTab(tabSymbols, false, textColor);
 		};
@@ -115,7 +122,7 @@ public final class SwipeT9SymbolPopup {
 		tabPunctuation.setOnClickListener(v -> showPunctuation.run());
 		tabSymbols.setOnClickListener(v -> showSymbols.run());
 
-		if (symbolsFirst) showSymbols.run(); else showPunctuation.run();
+		showPunctuation.run();
 
 		// Place the picker over the lower part of the keyboard, so it never leaves the IME window.
 		int rowsMax = (Math.max(PUNCTUATION.length, SYMBOLS.length) + COLUMNS - 1) / COLUMNS;

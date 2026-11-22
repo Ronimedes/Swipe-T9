@@ -352,16 +352,28 @@ public class TraditionalT9 extends PremiumHandler {
 
     /** v0.2.9: remembers in the swipe log which word the user accepted after a swipe. */
     public void recordSwipeT9Chosen(String word) {
+        noteSwipeT9Replacement(word, chosenSwipeLogId >= 0);
         if (chosenSwipeLogId < 0) return;
         long id = chosenSwipeLogId;
         chosenSwipeLogId = -1;
         if (word == null || word.trim().isEmpty()) return;
         SwipeT9History.setChosen(this, id, word.trim(), false);
+        SwipeT9History.countRank(this, id, word.trim());
         lastChosenSwipeLogId = id;
         lastChosenSwipeTime = System.currentTimeMillis();
     }
 
     private long lastChosenSwipeLogId = -1;
+    // v0.2.13 correction log: the last swiped word (until a new word starts) and a deleted one.
+    private long correctableSwipeLogId = -1;
+    private long awaitingReplacementLogId = -1;
+
+    private void noteSwipeT9Replacement(String word, boolean swiped) {
+        if (awaitingReplacementLogId < 0 || word == null || word.trim().isEmpty()) return;
+        long id = awaitingReplacementLogId;
+        awaitingReplacementLogId = -1;
+        SwipeT9History.setReplacement(this, id, word.trim(), swiped);
+    }
     private long lastChosenSwipeTime = 0;
 
     @Override
@@ -372,11 +384,14 @@ public class TraditionalT9 extends PremiumHandler {
     @Override
     protected void onSwipeT9Selected(String word, boolean learned) {
         boolean fresh = System.currentTimeMillis() - lastChosenSwipeTime < 2000;
-        long id = lastChosenSwipeLogId >= 0 && fresh ? lastChosenSwipeLogId : chosenSwipeLogId;
+        boolean viaLast = lastChosenSwipeLogId >= 0 && fresh;
+        long id = viaLast ? lastChosenSwipeLogId : chosenSwipeLogId;
+        if (!viaLast) noteSwipeT9Replacement(word, id >= 0);
         lastChosenSwipeLogId = -1;
         chosenSwipeLogId = -1;
         if (id < 0 || word == null || word.trim().isEmpty()) return;
         SwipeT9History.setChosen(this, id, word.trim(), learned);
+        if (!viaLast) SwipeT9History.countRank(this, id, word.trim());
     }
 
     public void recordSwipeT9ShownSuggestions(ArrayList<String> suggestions) {
@@ -483,6 +498,7 @@ public class TraditionalT9 extends PremiumHandler {
         if (logId != -1 && isSwipeT9DiagnosticAllowed()) {
             pendingSwipeLogId = logId;
             chosenSwipeLogId = logId;
+            correctableSwipeLogId = logId;
             pendingSwipeSequenceLength = mInputMode.getSequenceLength() + digits.length();
             // Do not launch a second getWords() request here. DataStore cancels
             // concurrent dictionary searches, which would break live suggestions.
@@ -501,21 +517,29 @@ public class TraditionalT9 extends PremiumHandler {
                     ArrayList<String> learnedChoices = new ArrayList<>();
                     learnedChoices.add(chosen);
                     SwipeT9History.updateCandidates(this, logId, "shown", learnedChoices);
+                    noteSwipeT9Replacement(chosen, true);
                     SwipeT9History.setChosen(this, logId, chosen, true);
                     pendingSwipeLogId = -1;
                     chosenSwipeLogId = -1;
                 }
+				swipedWordOpen = true;
 				markSwipeT9Entered();
 				return true;
 			}
 		}
 		boolean result = false;
-		for (int i = 0; i < digits.length(); i++) {
-			int number = digits.charAt(i) - '0';
-			if (number < 2 || number > 9) return false;
-			result = onNumber(number, false, 0) || result;
+		feedingSwipeDigits = true;
+		try {
+			for (int i = 0; i < digits.length(); i++) {
+				int number = digits.charAt(i) - '0';
+				if (number < 2 || number > 9) return false;
+				result = onNumber(number, false, 0) || result;
+			}
+		} finally {
+			feedingSwipeDigits = false;
 		}
 		if (result) {
+			swipedWordOpen = true;
 			markSwipeT9Entered();
 			if (drawing != null) rememberPendingSwipe(drawing);
 		}
@@ -528,10 +552,35 @@ public class TraditionalT9 extends PremiumHandler {
 			&& settings.isMainLayoutNumpad() && !isTouchExplorationEnabled();
 	}
 
+	// v0.2.13: a key press right after a swiped word starts a NEW word (space in between).
+	private boolean feedingSwipeDigits = false;
+	private boolean swipedWordOpen = false;
+
+	@Override
+	public boolean onBackspace(int repeat) {
+		swipedWordOpen = false;
+		if (correctableSwipeLogId >= 0 && repeat == 0) {
+			SwipeT9History.markDeleted(this, correctableSwipeLogId);
+			awaitingReplacementLogId = correctableSwipeLogId;
+			correctableSwipeLogId = -1;
+			chosenSwipeLogId = -1;
+			lastChosenSwipeLogId = -1;
+		}
+		return super.onBackspace(repeat);
+	}
+
 	@Override
 	protected boolean onNumber(int key, boolean hold, int repeat) {
 		if (InputModeKind.isPredictive(mInputMode) && DictionaryLoader.autoLoad(this, settings, mLanguage)) {
 			return true;
+		}
+		if (!feedingSwipeDigits) {
+			correctableSwipeLogId = -1;
+			boolean startNewWord = swipedWordOpen && key >= 2 && key <= 9 && !hold;
+			swipedWordOpen = false;
+			if (startNewWord) {
+				prepareSwipeT9WordStart();
+			}
 		}
 		return super.onNumber(key, hold, repeat);
 	}

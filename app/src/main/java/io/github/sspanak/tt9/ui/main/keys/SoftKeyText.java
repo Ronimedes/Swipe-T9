@@ -41,7 +41,7 @@ abstract public class SoftKeyText extends BaseSwipeableKey {
 		final boolean isInputModeNumeric = tt9 != null && tt9.isInputModeNumeric();
 		final boolean isFnPanelOn = tt9 != null && tt9.isFnPanelVisible();
 
-		if (isInputModeNumeric || hasLettersOnAllKeys() || isFnPanelOn) {
+		if ((isInputModeNumeric && !SwipeT9Layout.isUnifiedBottomRow(tt9)) || hasLettersOnAllKeys() || isFnPanelOn) {
 			return isLongSpaceKey;
 		}
 

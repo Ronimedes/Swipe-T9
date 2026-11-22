@@ -26,7 +26,7 @@ public class SoftKeyNumber0 extends SoftKeyNumberSwipeable {
 
 
 	protected boolean shouldHide() {
-		if (tt9 == null || tt9.isInputModeNumeric()) {
+		if (tt9 == null || (tt9.isInputModeNumeric() && !SwipeT9Layout.isUnifiedBottomRow(tt9))) {
 			return false;
 		}
 

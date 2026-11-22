@@ -128,12 +128,29 @@ public class KeyPadScreen extends BaseScreenFragment {
     }
 
     /** Display entries in reverse chronological order, never the surrounding typed text. */
+    /** v0.2.13: how often the taken word was on place 1, 2-3, 4+ or not offered at all. */
+    private String rankSummary() {
+        int[] r = SwipeT9History.getRankStats(requireContext());
+        int total = r[0] + r[1] + r[2] + r[3];
+        if (total == 0) return "Platz-Statistik: noch keine Daten";
+        return "Gewähltes Wort auf Platz 1: " + (100 * r[0] / total) + " %  ·  Platz 2–3: " + (100 * r[1] / total)
+                + " %  ·  Platz 4+: " + (100 * r[2] / total) + " %  ·  nicht angeboten: " + (100 * r[3] / total)
+                + " %  (" + total + " Wischwörter)";
+    }
+
     private void showHistory() {
-        ArrayList<JSONObject> entries = SwipeT9History.list(requireContext());
+        // v0.2.13: correction log. Only swiped words that were deleted afterwards.
+        ArrayList<JSONObject> entries = new ArrayList<>();
+        for (JSONObject e : SwipeT9History.list(requireContext())) {
+            if (e.optBoolean("deleted", false)) entries.add(e);
+        }
         if (entries.isEmpty()) {
-            new AlertDialog.Builder(requireContext()).setTitle("Wischprotokoll")
-                    .setMessage("Noch keine Wischbewegungen aufgezeichnet. Aktiviere zuerst 'Wischprotokoll aufzeichnen'.")
-                    .setPositiveButton("OK", null).show();
+            new AlertDialog.Builder(requireContext()).setTitle("Korrektur-Protokoll")
+                    .setMessage("Noch keine Korrekturen. Hier erscheinen gewischte Wörter, die du danach gelöscht hast, "
+                            + "und was du stattdessen geschrieben hast.\n\n" + rankSummary())
+                    .setPositiveButton("OK", null)
+                    .setNeutralButton("Statistik zurücksetzen", (d, w) -> SwipeT9History.clearRankStats(requireContext()))
+                    .show();
             return;
         }
         CharSequence[] names = new CharSequence[entries.size()];
@@ -149,11 +166,20 @@ public class KeyPadScreen extends BaseScreenFragment {
             String chosen = e.optString("chosen", "");
             String chosenInfo = chosen.isEmpty() ? "" : "\n   gewählt: " + chosen + (e.optBoolean("learned") ? "  ✓ gelernt" : "");
             String targetInfo = target.isEmpty() ? "" : "\n   gemeint: " + target + (containsWord(e, target) ? "  ✓" : "  ✗");
+            String replacement = e.optString("replacement", "");
+            String replacementInfo = "\n   gelöscht" + (replacement.isEmpty() ? "" : " → ersetzt durch: " + replacement
+                    + (e.optBoolean("replacementSwiped") ? " (gewischt)" : " (getippt)")
+                    + (containsWord(e, replacement) ? "  · stand in der Liste" : "  · nicht angeboten"));
             names[i] = time + "  " + e.optString("digits", "?") +
                     (e.optBoolean("recognized") ? "" : " (nicht erkannt)") +
-                    "\n   → " + (words.isEmpty() ? "keine Vorschläge" : words) + chosenInfo + targetInfo;
+                    "\n   → " + (words.isEmpty() ? "keine Vorschläge" : words) + chosenInfo + replacementInfo + targetInfo;
         }
-        new AlertDialog.Builder(requireContext()).setTitle("Wischprotokoll (" + entries.size() + "/100)")
+        android.widget.TextView header = new android.widget.TextView(requireContext());
+        int pad = Math.round(20 * getResources().getDisplayMetrics().density);
+        header.setPadding(pad, pad, pad, pad / 2);
+        header.setText("Korrekturen (" + entries.size() + "/100)\n" + rankSummary());
+        header.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15);
+        new AlertDialog.Builder(requireContext()).setCustomTitle(header)
                 .setItems(names, (dialog, which) -> showHistoryItem(entries.get(which)))
                 .setNegativeButton("Schließen", null)
                 .setNeutralButton("Alle löschen", (dialog, which) -> confirmClearHistory())
@@ -162,9 +188,12 @@ public class KeyPadScreen extends BaseScreenFragment {
 
     private void confirmClearHistory() {
         new AlertDialog.Builder(requireContext()).setTitle("Alle Wischspuren löschen?")
-                .setMessage("Entfernt die letzten 100 Protokolleinträge. Gelernte Wörter bleiben erhalten.")
+                .setMessage("Entfernt alle Korrekturen und die Platz-Statistik. Gelernte Wörter bleiben erhalten.")
                 .setNegativeButton("Abbrechen", null)
-                .setPositiveButton("Löschen", (dialog, which) -> SwipeT9History.clear(requireContext()))
+                .setPositiveButton("Löschen", (dialog, which) -> {
+                    SwipeT9History.clear(requireContext());
+                    SwipeT9History.clearRankStats(requireContext());
+                })
                 .show();
     }
 

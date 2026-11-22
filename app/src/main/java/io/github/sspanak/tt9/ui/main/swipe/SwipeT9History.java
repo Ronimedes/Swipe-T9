@@ -17,6 +17,8 @@ import java.util.ArrayList;
  */
 public final class SwipeT9History {
     public static final String ENABLED = "swipe_t9_debug_history";
+    private static final int KEEP_UNRESOLVED = 3;
+    private static final String RANK_PREFS = "swipe_t9_rank_stats";
     private static final String FILE = "swipe_t9_history.json";
     private static final int LIMIT = 100;
     private static final int MAX_POINTS = 80;
@@ -81,10 +83,19 @@ public final class SwipeT9History {
         if (digits == null || digits.length() > 32 || trace == null) return -1;
         synchronized (LOCK) {
             try {
+                // v0.2.13: correction log. Keep only swipes that were deleted afterwards,
+                // plus the newest few that may still be corrected.
                 JSONArray existing = read(context);
+                ArrayList<JSONObject> kept = new ArrayList<>();
+                for (int i = 0; i < existing.length(); i++) {
+                    JSONObject e = existing.optJSONObject(i);
+                    if (e == null) continue;
+                    boolean recent = i >= existing.length() - KEEP_UNRESOLVED;
+                    if (e.optBoolean("deleted", false) || recent) kept.add(e);
+                }
                 JSONArray entries = new JSONArray();
-                for (int i = Math.max(0, existing.length() - LIMIT + 1); i < existing.length(); i++) {
-                    entries.put(existing.get(i));
+                for (int i = Math.max(0, kept.size() - LIMIT + 1); i < kept.size(); i++) {
+                    entries.put(kept.get(i));
                 }
                 long id = System.currentTimeMillis() * 1000 + System.nanoTime() % 1000;
                 JSONArray points = new JSONArray();
@@ -189,5 +200,43 @@ public final class SwipeT9History {
     /** v0.2.9: the word the user took after this swipe. */
     public static void setChosen(Context context, long id, String word, boolean learned) {
         editEntry(context, id, entry -> entry.put("chosen", word == null ? "" : word).put("learned", learned));
+    }
+
+    /** v0.2.13: the swiped word was deleted right afterwards. */
+    public static void markDeleted(Context context, long id) {
+        editEntry(context, id, entry -> entry.put("deleted", true));
+    }
+
+    /** v0.2.13: what was written instead of the deleted swipe word. */
+    public static void setReplacement(Context context, long id, String word, boolean swiped) {
+        editEntry(context, id, entry -> entry.put("replacement", word == null ? "" : word).put("replacementSwiped", swiped));
+    }
+
+    /** v0.2.13: counts on which place of the suggestion list the taken word was. */
+    public static void countRank(Context context, long id, String word) {
+        if (id == -1 || word == null) return;
+        JSONObject entry = find(context, id);
+        if (entry == null) return;
+        int rank = -1;
+        for (String key : new String[] {"decoderWords", "shown"}) {
+            JSONArray words = entry.optJSONArray(key);
+            if (words == null || words.length() == 0) continue;
+            for (int i = 0; i < words.length(); i++) {
+                if (word.equalsIgnoreCase(words.optString(i))) { rank = i + 1; break; }
+            }
+            break;
+        }
+        String bucket = rank == 1 ? "p1" : rank >= 2 && rank <= 3 ? "p2_3" : rank >= 4 ? "p4" : "none";
+        android.content.SharedPreferences prefs = context.getSharedPreferences(RANK_PREFS, Context.MODE_PRIVATE);
+        prefs.edit().putInt(bucket, prefs.getInt(bucket, 0) + 1).apply();
+    }
+
+    public static int[] getRankStats(Context context) {
+        android.content.SharedPreferences prefs = context.getSharedPreferences(RANK_PREFS, Context.MODE_PRIVATE);
+        return new int[] { prefs.getInt("p1", 0), prefs.getInt("p2_3", 0), prefs.getInt("p4", 0), prefs.getInt("none", 0) };
+    }
+
+    public static void clearRankStats(Context context) {
+        context.getSharedPreferences(RANK_PREFS, Context.MODE_PRIVATE).edit().clear().apply();
     }
 }

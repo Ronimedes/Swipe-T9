@@ -13,14 +13,21 @@ public class SoftKeyTextLeft extends SoftKeyText {
 
 	@Override
 	protected String getTopText() {
-		return useQuestionHold() ? "?#" : super.getTopText();
+		if (isUnified()) return tt9.isInputModeNumeric() ? "," : "0";
+		return super.getTopText();
 	}
 
 
+	/**
+	 * v0.2.13: same position in both modes. Letters: tap "!", hold "0".
+	 * Numbers: tap "0", hold ",". The characters picker moved to holding the space bar.
+	 */
+	private boolean isUnified() {
+		return SwipeT9Layout.isUnifiedBottomRow(tt9) && !isTextEditingOn();
+	}
+
 	private boolean useQuestionHold() {
-		return tt9 != null && tt9.getSettings().isMainLayoutNumpad()
-			&& tt9.getLanguage() != null && "de".equals(tt9.getLanguage().getLocale().getLanguage())
-			&& !tt9.isInputModeNumeric() && !isTextEditingOn() && !tt9.isFnPanelVisible();
+		return isUnified();
 	}
 
 	@Override
@@ -34,9 +41,8 @@ public class SoftKeyTextLeft extends SoftKeyText {
 		if (useQuestionHold()) {
 			questionHold = true;
 			preventRepeat();
-			// Swipe-T9: the "!" key owns punctuation and symbols in one picker that stays open.
 			vibrate(io.github.sspanak.tt9.ui.Vibration.getHoldVibration());
-			SwipeT9SymbolPopup.show(this, tt9, false);
+			tt9.onText(tt9.isInputModeNumeric() ? "," : "0", false);
 		} else {
 			super.handleHold();
 		}
@@ -44,7 +50,7 @@ public class SoftKeyTextLeft extends SoftKeyText {
 
 	@Override
 	protected String getHoldText() {
-		return useQuestionHold() ? "Satz- und Sonderzeichen" : super.getHoldText();
+		return useQuestionHold() ? (tt9.isInputModeNumeric() ? "Komma" : "Null") : super.getHoldText();
 	}
 
 
@@ -70,7 +76,7 @@ public class SoftKeyTextLeft extends SoftKeyText {
 	protected String getKeyChar() {
 		if (tt9 == null) return "";
 		if (tt9.isInputTypePhone()) return "*";
-		if (tt9.isInputModeNumeric()) return ",";
+		if (tt9.isInputModeNumeric()) return isUnified() ? "0" : ",";
 		if (tt9.isTextEditingActive()) return CmdUndo.iconTxt;
 
 		return Characters.getChar(tt9.getLanguage(), SettingsStore.SOFT_KEY_TEXT_LEFT_DEFAULT);
