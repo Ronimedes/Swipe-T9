@@ -554,7 +554,7 @@ public abstract class TypingHandler extends KeyPadHandler {
 	 * @return false in single-line fields, where Enter keeps triggering the field's action.
 	 */
 	public boolean swipeT9NewLine() {
-		if (shouldBeOff() || !getInputType().isMultilineText()) return false;
+		if (shouldBeOff() || !inputType.isMultilineText()) return false;
 		suggestionOps.cancelDelayedAccept();
 		if (mInputMode.getSequenceLength() > 0) {
 			String lastWord = suggestionOps.acceptIncomplete();
