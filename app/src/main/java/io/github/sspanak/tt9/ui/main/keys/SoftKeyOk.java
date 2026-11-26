@@ -21,13 +21,57 @@ public class SoftKeyOk extends BaseSwipeableKey {
 		textColor = settings.getKeyOkTextColor();
 	}
 
+	private boolean actionByHold = false;
+
+	/** v0.2.16: multi-line fields (WhatsApp, notes, e-mail): tap = new line, hold = the field's action. */
+	private boolean isEnterKey() {
+		return tt9 != null && tt9.getSettings().isMainLayoutNumpad() && tt9.getInputType().isMultilineText()
+			&& !tt9.isTextEditingActive() && !tt9.isFnPanelVisible();
+	}
+
 	@Override protected String getTitle() {
+		if (isEnterKey()) return "\u21B5";
 		CharSequence layoutTitle = getText();
 		return layoutTitle.length() == 0 ? "OK" : layoutTitle.toString();
 	}
 
 	@Override
+	protected String getHoldText() {
+		return isEnterKey() ? "OK" : super.getHoldText();
+	}
+
+	@Override
+	public boolean isHoldEnabled() {
+		return isEnterKey() || super.isHoldEnabled();
+	}
+
+	@Override
+	protected boolean handlePress() {
+		actionByHold = false;
+		return super.handlePress();
+	}
+
+	@Override
+	protected void handleHold() {
+		if (isEnterKey()) {
+			preventRepeat();
+			actionByHold = true;
+			vibrate(io.github.sspanak.tt9.ui.Vibration.getHoldVibration());
+			if (!tt9.onOK()) tt9.sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER);
+			return;
+		}
+		super.handleHold();
+	}
+
+	@Override
 	protected boolean handleRelease() {
+		if (actionByHold) {
+			actionByHold = false;
+			return true;
+		}
+		if (validateTT9Handler() && isEnterKey() && tt9.swipeT9NewLine()) {
+			return true;
+		}
 		if (validateTT9Handler() && !tt9.onOK()) {
 			// If no standard editor action was performed, it probably means we can only type a new line,
 			// so we simulate the hardware ENTER key.

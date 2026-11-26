@@ -359,6 +359,7 @@ public class TraditionalT9 extends PremiumHandler {
         if (word == null || word.trim().isEmpty()) return;
         SwipeT9History.setChosen(this, id, word.trim(), false);
         SwipeT9History.countRank(this, id, word.trim());
+        io.github.sspanak.tt9.ui.main.swipe.SwipeT9Favorites.add(this, word.trim());
         lastChosenSwipeLogId = id;
         lastChosenSwipeTime = System.currentTimeMillis();
     }
@@ -369,10 +370,22 @@ public class TraditionalT9 extends PremiumHandler {
     private long awaitingReplacementLogId = -1;
 
     private void noteSwipeT9Replacement(String word, boolean swiped) {
+        if (word != null) io.github.sspanak.tt9.ui.main.swipe.SwipeT9Favorites.add(this, word);
         if (awaitingReplacementLogId < 0 || word == null || word.trim().isEmpty()) return;
         long id = awaitingReplacementLogId;
         awaitingReplacementLogId = -1;
+        // v0.2.16: only a word starting on the same or a neighbouring key is a real correction.
+        org.json.JSONObject entry = SwipeT9History.find(this, id);
+        String raw = entry == null ? "" : entry.optString("digits", "");
+        String seq = null;
+        try { if (mLanguage != null) seq = mLanguage.getDigitSequenceForWord(word.trim()); } catch (Exception ignored) {}
+        if (raw.isEmpty() || seq == null || seq.isEmpty() || !isNeighbourKey(raw.charAt(0) - '0', seq.charAt(0) - '0')) return;
         SwipeT9History.setReplacement(this, id, word.trim(), swiped);
+    }
+
+    private static boolean isNeighbourKey(int a, int b) {
+        if (a < 1 || a > 9 || b < 1 || b > 9) return false;
+        return Math.abs((a - 1) / 3 - (b - 1) / 3) <= 1 && Math.abs((a - 1) % 3 - (b - 1) % 3) <= 1;
     }
     private long lastChosenSwipeTime = 0;
 
@@ -391,6 +404,7 @@ public class TraditionalT9 extends PremiumHandler {
         chosenSwipeLogId = -1;
         if (id < 0 || word == null || word.trim().isEmpty()) return;
         SwipeT9History.setChosen(this, id, word.trim(), learned);
+        io.github.sspanak.tt9.ui.main.swipe.SwipeT9Favorites.add(this, word.trim());
         if (!viaLast) SwipeT9History.countRank(this, id, word.trim());
     }
 
@@ -438,6 +452,7 @@ public class TraditionalT9 extends PremiumHandler {
         for (String w : ranked) {
             if (w != null && !io.github.sspanak.tt9.ui.main.swipe.SwipeT9Blocklist.isBlocked(this, w)) words.add(w);
         }
+        words = io.github.sspanak.tt9.ui.main.swipe.SwipeT9Favorites.sort(this, words);
         String best = null;
         for (String w : words) {
             try {

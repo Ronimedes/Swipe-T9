@@ -28,8 +28,8 @@ public final class SwipeT9PrefixSearch {
 	}
 
 	private static final float KEEP_TRANSIT_COST = 0.6f;
-	private static final float FIRST_REPEAT_COST = 0.45f;
-	private static final float NEXT_REPEAT_COST = 0.2f;
+	private static final float FIRST_REPEAT_COST = 0.25f;
+	private static final float NEXT_REPEAT_COST = 0.15f;
 	private static final int MAX_REPEATS = 3;
 	private static final int MAX_LENGTH = 32;
 

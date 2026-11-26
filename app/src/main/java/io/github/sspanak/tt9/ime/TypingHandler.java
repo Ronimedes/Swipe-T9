@@ -549,6 +549,26 @@ public abstract class TypingHandler extends KeyPadHandler {
 		return true;
 	}
 
+	/**
+	 * v0.2.16 Enter key: accept the word being typed (one press) and start a new line.
+	 * @return false in single-line fields, where Enter keeps triggering the field's action.
+	 */
+	public boolean swipeT9NewLine() {
+		if (shouldBeOff() || !getInputType().isMultilineText()) return false;
+		suggestionOps.cancelDelayedAccept();
+		if (mInputMode.getSequenceLength() > 0) {
+			String lastWord = suggestionOps.acceptIncomplete();
+			if (!lastWord.isEmpty()) {
+				onSwipeT9WordAccepted(lastWord);
+				mInputMode.onAcceptSuggestion(lastWord);
+			}
+		}
+		textField.setText("\n");
+		String[] surrounding = textField.getSurroundingStringForAutoAssistance(settings, mInputMode);
+		mInputMode.determineNextWordTextCase(surrounding[0], -1);
+		return true;
+	}
+
 	/** v0.2.10: overridden to note the accepted word in the swipe log. */
 	protected void onSwipeT9WordAccepted(String word) {}
 

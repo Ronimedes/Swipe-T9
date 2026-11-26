@@ -207,7 +207,8 @@ public final class SwipeT9Decoder {
 			// v0.2.14: the first/last key is usually meant, but a finger that lands or lifts
 			// just on the edge of a neighbour key touches it only briefly. Then it may be dropped.
 			if (i == 0 || i == n - 1) {
-				s.strength = (n > 2 && path < 0.3f * key) ? 0.6f : 1f;
+				// v0.2.16: a finger often lands on the neighbour key; allow dropping it more easily.
+				s.strength = (n > 2 && path < 0.3f * key) ? 0.6f : (n > 3 ? 0.85f : 1f);
 				out[i] = s;
 				continue;
 			}
