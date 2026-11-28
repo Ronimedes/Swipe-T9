@@ -84,6 +84,7 @@ public class SoftKeyOk extends BaseSwipeableKey {
 
 	@Override
 	protected float getTitleScale() {
+		if (isEnterKey()) return 1.8f;
 		return tt9 != null && tt9.getSettings().isMainLayoutLarge() ? super.getTitleScale() : 1;
 	}
 

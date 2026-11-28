@@ -25,7 +25,7 @@ public class SettingsMindReading extends SettingsKeyChars {
 	}
 
 	public boolean getMindReadingGuess() {
-		return prefs.getBoolean("auto_mind_reading_guess", false);
+		return prefs.getBoolean("auto_mind_reading_guess", true) // Swipe-T9 v0.2.17: on by default;
 	}
 
 	public boolean getMindReadingComplete() {

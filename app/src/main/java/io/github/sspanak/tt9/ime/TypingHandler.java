@@ -503,6 +503,8 @@ public abstract class TypingHandler extends KeyPadHandler {
 			if (!lastWord.isEmpty()) {
 				onSwipeT9WordAccepted(lastWord);
 				mInputMode.onAcceptSuggestion(lastWord);
+				// v0.2.17: next-word predictions learn from swiped words too
+				mindReader.setContext(mInputMode, mLanguage, textField.getSurroundingStringForAutoAssistance(settings, mInputMode), lastWord);
 			}
 		}
 		if (joinNextSwipeWord) {
@@ -561,6 +563,8 @@ public abstract class TypingHandler extends KeyPadHandler {
 			if (!lastWord.isEmpty()) {
 				onSwipeT9WordAccepted(lastWord);
 				mInputMode.onAcceptSuggestion(lastWord);
+				// v0.2.17: next-word predictions learn from swiped words too
+				mindReader.setContext(mInputMode, mLanguage, textField.getSurroundingStringForAutoAssistance(settings, mInputMode), lastWord);
 			}
 		}
 		textField.setText("\n");
