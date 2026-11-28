@@ -32,6 +32,7 @@
 	<io.github.sspanak.tt9.ui.main.keys.SoftKeyEmojiText
 		style="@style/TTheme.Numpad.Key.Arrow"
 		android:id="@+id/soft_key_swipe_emoji"
+		android:paddingBottom="2dp"
 		android:contentDescription="@string/function_show_emojis" />
 
 	<io.github.sspanak.tt9.ui.main.keys.SoftKeyArrow

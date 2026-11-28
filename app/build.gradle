@@ -162,8 +162,8 @@ android {
 		buildFeatures.buildConfig = true
 		minSdk = 24
 		targetSdk = 37
-		versionCode = 20018
-		versionName = "0.2.18"
+		versionCode = 20019
+		versionName = "0.2.19"
 
 		buildConfigField 'String', 'DICTIONARY_EXTENSION', "\"${DICTIONARY_OUTPUT_EXTENSION}\""
 		buildConfigField 'String', 'DOCS_DIR', "\"${DOCS_DIR_NAME}\""

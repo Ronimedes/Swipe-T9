@@ -17,12 +17,6 @@ public class SoftKeyEmojiText extends BaseSoftKeyCustomizable {
 	public SoftKeyEmojiText(Context context, AttributeSet attrs, int defStyleAttr) { super(context, attrs, defStyleAttr); }
 
 	@Override protected String getTitle() { return "☺︎"; }
-	/** v0.2.18: smiley slightly higher in the key. */
-	@Override public void render() {
-		super.render();
-		int lift = Math.round(2 * getResources().getDisplayMetrics().density);
-		if (getPaddingBottom() != lift) setPadding(getPaddingLeft(), 0, getPaddingRight(), lift);
-	}
 
 	@Override protected String getAccessibilityText() { return showEmojis.getName(tt9); }
 
