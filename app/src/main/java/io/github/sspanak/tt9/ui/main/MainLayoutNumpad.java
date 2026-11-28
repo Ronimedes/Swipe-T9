@@ -90,6 +90,11 @@ class MainLayoutNumpad extends MainLayoutClassic {
 				continue;
 			}
 
+			// Swipe-T9 v0.2.18: the smiley key sits in the suggestion bar like the small arrows
+			if (key.getId() == R.id.soft_key_swipe_emoji) {
+				continue;
+			}
+
 			if (key instanceof SoftKeyText) {
 				key.setHeight(textKeyHeight);
 				continue;

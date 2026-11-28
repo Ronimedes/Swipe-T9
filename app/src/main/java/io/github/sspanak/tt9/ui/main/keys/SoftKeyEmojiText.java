@@ -17,10 +17,10 @@ public class SoftKeyEmojiText extends BaseSoftKeyCustomizable {
 	public SoftKeyEmojiText(Context context, AttributeSet attrs, int defStyleAttr) { super(context, attrs, defStyleAttr); }
 
 	@Override protected String getTitle() { return "☺︎"; }
-	/** v0.2.17: smiley a bit higher in the key. */
+	/** v0.2.18: smiley slightly higher in the key. */
 	@Override public void render() {
 		super.render();
-		int lift = Math.round(4 * getResources().getDisplayMetrics().density);
+		int lift = Math.round(2 * getResources().getDisplayMetrics().density);
 		if (getPaddingBottom() != lift) setPadding(getPaddingLeft(), 0, getPaddingRight(), lift);
 	}
 
